@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "fl4bn"
+version = "0.1.0"
+description = ""
+authors = ["Abele Mălan <abele.malan@asml.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pgmpy = "^0.1.21"
+numpy = "^1.24.2"
+pandas = "^1.5.3"
+networkx = "^2.8.8"
+
+[tool.poetry.group.dev.dependencies]
+jupyterlab = "^3.6.1"
+ipywidgets = "^8.0.4"
+daft = "^0.1.2"
+matplotlib = "^3.6.3"
+scikit-learn = "^1.2.1"
+prospector = { version = "^1.8.4", extras = ["with_bandit"] }
+# ruff = "^0.0.241"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
