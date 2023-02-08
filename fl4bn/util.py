@@ -2,8 +2,10 @@ import warnings
 from collections import defaultdict
 from random import Random
 from typing import Collection, cast
+from pathlib import Path
 
 from combine import CombineMethod, combine_bns
+from joblib import Memory
 from pandas import DataFrame
 from pgmpy.base import DAG
 from pgmpy.estimators import HillClimbSearch, MaximumLikelihoodEstimator
@@ -11,6 +13,8 @@ from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 from pgmpy.utils import get_example_model
+
+_memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -22,7 +26,7 @@ def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
 
 
 def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
-    # Island nodes are not included in neither the in nor the out list.
+    # Island nodes are not included in neither the in, nor the out list.
     in_nodes: list[str] = []
     out_nodes: list[str] = []
     edges_to, edges_from = [set(edge_list) for edge_list in zip(*bayes_net.edges())]
@@ -84,6 +88,7 @@ def split_vars(bayes_net: BayesianNetwork, nr_splits: int, r_seed: int | None) -
     return list(parent_to_nodes.values())
 
 
+@_memory.cache
 def train_model(samples: DataFrame) -> BayesianNetwork:
     est = HillClimbSearch(data=samples, use_cache=True)
 

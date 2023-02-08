@@ -1,3 +1,4 @@
+autodetect: false
 strictness: high
 bandit:
   run: true

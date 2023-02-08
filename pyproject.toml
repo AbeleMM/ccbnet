@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "fl4bn"
 version = "0.1.0"
-description = ""
+description = "Federated Learning for Bayesian Networks"
 authors = ["Abele Mălan <abele.malan@asml.com>"]
 readme = "README.md"
 
@@ -10,6 +10,7 @@ python = "^3.9"
 pgmpy = "^0.1.21"
 numpy = "^1.24.2"
 pandas = "^1.5.3"
+joblib = "^1.2.0"
 networkx = "^2.8.8"
 
 [tool.poetry.group.dev.dependencies]
