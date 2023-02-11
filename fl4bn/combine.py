@@ -21,6 +21,8 @@ def combine_bns(bns: list[BayesianNetwork], method: CombineMethod) -> BayesianNe
 def combine_bns_weighted(
         bn_to_conf: dict[BayesianNetwork, float],
         method: CombineMethod) -> BayesianNetwork:
+    # Assumes nodes identified by strings & same nodes in different networks have same values
+    # TODO potentially use class
 
     if method is CombineMethod.MULTI:
         return _combine_bns_weighted_multi(bn_to_conf)
@@ -57,26 +59,27 @@ def combine_bns_weighted(
                 method != CombineMethod.UNION
             ):
                 # Begin Algorithm 2
-                if len(bns_without_intersect_node_parents) == 0:
-                    bn_perserve = max(
-                        node_bn_to_parent_set.keys(),
-                        key=lambda bn: bn_to_conf[bn]
-                    )
-                    _preserve_from_bn(bn_combined, node, bn_perserve)
-                elif len(bns_without_intersect_node_parents) == 1:
-                    _preserve_from_bn(bn_combined, node, bns_without_intersect_node_parents[0])
-                else:
-                    bn_perserve = max(
-                        bns_without_intersect_node_parents,
-                        key=lambda bn: bn_to_conf[bn]
-                    )
-                    _preserve_from_bn(bn_combined, node, bn_perserve)
+                _combine_int_node(
+                    bn_combined,
+                    node,
+                    bns_without_intersect_node_parents,
+                    node_bn_to_parent_set,
+                    bn_to_conf
+                )
                 # End Algorithm 2
             # Exterior Node
             else:
                 # Begin Algorithm 3
-                parents_union: list[str] = sorted(set.union(*node_bn_to_parent_set.values()))
-                bn_combined.add_edges_from([(p, node) for p in parents_union])
+                # TODO split into separate method
+                parents_union: list[str] = []
+                for parent in sorted(set.union(*node_bn_to_parent_set.values())):
+                    try:
+                        bn_combined.add_edge(parent, node)
+                        parents_union.append(parent)
+                    except ValueError as val_err:
+                        # TODO potentially remove condition
+                        if method != CombineMethod.UNION:
+                            raise val_err
 
                 node_cpd = TabularCPD(
                     variable=node,
@@ -93,6 +96,28 @@ def combine_bns_weighted(
         # End Algorithm 1
 
     return bn_combined
+
+
+def _combine_int_node(
+        bn_combined: BayesianNetwork,
+        node: str,
+        bns_without_intersect_node_parents: list[BayesianNetwork],
+        node_bn_to_parent_set: dict[BayesianNetwork, set[str]],
+        bn_to_conf: dict[BayesianNetwork, float]) -> None:
+    if len(bns_without_intersect_node_parents) == 0:
+        bn_perserve = max(
+            node_bn_to_parent_set.keys(),
+            key=lambda bn: bn_to_conf[bn]
+        )
+        _preserve_from_bn(bn_combined, node, bn_perserve)
+    elif len(bns_without_intersect_node_parents) == 1:
+        _preserve_from_bn(bn_combined, node, bns_without_intersect_node_parents[0])
+    else:
+        bn_perserve = max(
+            bns_without_intersect_node_parents,
+            key=lambda bn: bn_to_conf[bn]
+        )
+        _preserve_from_bn(bn_combined, node, bn_perserve)
 
 
 def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float]) -> BayesianNetwork:
@@ -125,20 +150,18 @@ def _get_ext_node_values(
     for parent_inst in itertools.product(*[node_to_vals[parent] for parent in parents_union]):
         tt_row: list[float] = [0] * nr_node_vals
         for bayes_net in node_bns:
-            cpd: TabularCPD = cast(TabularCPD, bayes_net.get_cpds(node))
-            values: np.ndarray = cast(
-                TabularCPD,
-                cpd.reduce(
-                    [
-                        (parent, parent_inst[i])
-                        for i, parent in enumerate(parents_union)
-                        if parent in cpd.get_evidence()
-                    ],
-                    inplace=False
-                )
-            ).values
-            # TODO incorporate weights
-            tt_row = [_get_superposition(v, values[i]) for i, v in enumerate(tt_row)]
+            cpd: TabularCPD = cast(TabularCPD, bayes_net.get_cpds(node)).copy()
+            cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
+            cpd.reduce(
+                [
+                    (parent, parent_inst[i])
+                    for i, parent in enumerate(parents_union)
+                    if parent in cpd.get_evidence()
+                ],
+                inplace=False
+            )
+            # TODO account for confidence
+            tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
         transp_table.append(tt_row)
 
     return np.array(transp_table).T

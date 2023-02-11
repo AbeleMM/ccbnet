@@ -1,14 +1,14 @@
 import warnings
-from collections import defaultdict
+from collections import Counter, defaultdict
+from pathlib import Path
 from random import Random
 from typing import Collection, cast
-from pathlib import Path
 
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from pandas import DataFrame
 from pgmpy.base import DAG
-from pgmpy.estimators import HillClimbSearch, MaximumLikelihoodEstimator
+from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
@@ -43,6 +43,8 @@ def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
 def split_vars(bayes_net: BayesianNetwork, nr_splits: int, r_seed: int | None) -> list[list[str]]:
     # Assumes nr. connected components in network <= nr. splits
     # Based on Kruskal's Algorithm
+    # TODO ensure splits have similar sizes
+    # TODO make overlap nodes (i.e., those in multiple splits) a changeable ratio of all
     node_parent: dict[str, str] = {}
     node_rank: dict[str, int] = {}
     shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
@@ -89,7 +91,7 @@ def split_vars(bayes_net: BayesianNetwork, nr_splits: int, r_seed: int | None) -
 
 
 @_memory.cache
-def train_model(samples: DataFrame) -> BayesianNetwork:
+def train_model(samples: DataFrame, max_nr_parents: int) -> BayesianNetwork:
     est = HillClimbSearch(data=samples, use_cache=True)
 
     with warnings.catch_warnings():
@@ -98,7 +100,7 @@ def train_model(samples: DataFrame) -> BayesianNetwork:
             DAG,
             est.estimate(
                 scoring_method="k2score",
-                max_indegree=len(samples.columns) // 2,
+                max_indegree=max_nr_parents,
                 max_iter=10**4,
                 show_progress=False
             )
@@ -110,7 +112,7 @@ def train_model(samples: DataFrame) -> BayesianNetwork:
 
     bayes_net.fit(
         samples,
-        estimator=MaximumLikelihoodEstimator,
+        estimator=BayesianEstimator,
         complete_samples_only=True
     )
 
@@ -160,10 +162,25 @@ def benchmark(
         ]
         test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
     evidence_vars, query_vars = get_in_out_nodes(model)
-    trained_models = [train_model(client_samples) for client_samples in clients_train_samples]
+    max_in_deg = Counter(e[1] for e in model.edges()).most_common(1)[0][1]
+    trained_models = [
+        train_model(client_samples, max_in_deg)
+        for client_samples in clients_train_samples
+    ]
+
+    return _get_test_results(test_samples, model, trained_models, evidence_vars, query_vars)
+
+
+def _get_test_results(
+        test_samples: DataFrame,
+        model: BayesianNetwork,
+        trained_models: list[BayesianNetwork],
+        evidence_vars: list[str],
+        query_vars: list[str]) -> dict[str, dict[str, float]]:
     res = {
         "Ground truth": calc_accuracy(test_samples, model, evidence_vars, query_vars)
     }
+
     for method in CombineMethod:
         res[method.value] = calc_accuracy(
             test_samples,
@@ -172,6 +189,7 @@ def benchmark(
             evidence_vars,
             query_vars
         )
+
     return res
 
 
