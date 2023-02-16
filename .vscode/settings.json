@@ -3,4 +3,7 @@
     "files.trimTrailingWhitespace": true,
     "python.analysis.typeCheckingMode": "basic",
     "python.linting.prospectorEnabled": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true,
+    },
 }

@@ -1,13 +1,14 @@
 import warnings
-from collections import Counter, defaultdict
+from collections import Counter, deque
+from math import ceil
 from pathlib import Path
 from random import Random
 from typing import Collection, cast
 
+import networkx as nx
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from pandas import DataFrame
-from pgmpy.base import DAG
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
@@ -40,54 +41,39 @@ def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
     return (in_nodes, out_nodes)
 
 
-def split_vars(bayes_net: BayesianNetwork, nr_splits: int, r_seed: int | None) -> list[list[str]]:
-    # Assumes nr. connected components in network <= nr. splits
-    # Based on Kruskal's Algorithm
-    # TODO ensure splits have similar sizes
-    # TODO make overlap nodes (i.e., those in multiple splits) a changeable ratio of all
-    node_parent: dict[str, str] = {}
-    node_rank: dict[str, int] = {}
+def split_vars(
+        bayes_net: BayesianNetwork,
+        nr_splits: int,
+        connected=True,
+        overlap_proportion=0.2,
+        seed: int | None = None) -> list[list[str]]:
+    rand = Random(seed)  # nosec
+    nr_overlaps = round(overlap_proportion * len(bayes_net.nodes()))
+
+    if connected:
+        dfs_tree = nx.dfs_tree(bayes_net.to_undirected())
+        communities: list[set[str]] = [
+            set(community)
+            for community in nx.algorithms.community.greedy_modularity_communities(
+                dfs_tree,
+                cutoff=nr_splits,
+                best_n=nr_splits
+            )
+        ]
+    else:
+        shuffled_nodes: list[str] = list(bayes_net.nodes())
+        rand.shuffle(shuffled_nodes)
+        split_size = ceil(len(shuffled_nodes) / nr_splits)
+        communities = [
+            set(shuffled_nodes[i:i + split_size])
+            for i in range(0, len(shuffled_nodes), split_size)
+        ]
+
     shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
-    Random(r_seed).shuffle(shuffled_edges)  # nosec
-    nr_edges = 0
+    rand.shuffle(shuffled_edges)
+    _overlap_communities(communities, nr_overlaps, deque(shuffled_edges))
 
-    for node in cast(Collection[str], bayes_net.nodes()):
-        node_parent[node] = node
-        node_rank[node] = 0
-
-    while nr_edges < len(bayes_net.nodes()) - nr_splits:
-        node_out, node_inc = shuffled_edges.pop()
-        parent_node_out = _find_parent(node_out, node_parent)
-        parent_node_inc = _find_parent(node_inc, node_parent)
-
-        if parent_node_out != parent_node_inc:
-            nr_edges += 1
-            if node_rank[parent_node_out] < node_rank[parent_node_inc]:
-                node_parent[parent_node_out] = node_parent[parent_node_inc]
-            else:
-                node_parent[parent_node_inc] = node_parent[parent_node_out]
-                inc = node_rank[parent_node_out] == node_rank[parent_node_inc]
-                node_rank[parent_node_out] += inc
-
-    parent_to_nodes: dict[str, list[str]] = defaultdict(list)
-    crossed_parents: set[str] = set()
-
-    for node in node_parent:
-        parent_to_nodes[_find_parent(node, node_parent)].append(node)
-
-    for node_out, node_inc in shuffled_edges:
-        parent_node_out = node_parent[node_out]
-        parent_node_inc = node_parent[node_inc]
-        if (
-            parent_node_out != parent_node_inc and
-            not set([parent_node_out, parent_node_inc]) <= crossed_parents
-        ):
-            crossed_parents.add(parent_node_out)
-            crossed_parents.add(parent_node_inc)
-            parent_to_nodes[parent_node_out].append(node_inc)
-            parent_to_nodes[parent_node_inc].append(node_out)
-
-    return list(parent_to_nodes.values())
+    return [list(community) for community in communities]
 
 
 @_memory.cache
@@ -96,14 +82,11 @@ def train_model(samples: DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
-        estimated_dag = cast(
-            DAG,
-            est.estimate(
-                scoring_method="k2score",
-                max_indegree=max_nr_parents,
-                max_iter=10**4,
-                show_progress=False
-            )
+        estimated_dag = est.estimate(
+            scoring_method="k2score",
+            max_indegree=max_nr_parents,
+            max_iter=10**4,
+            show_progress=False
         )
 
     bayes_net = BayesianNetwork()
@@ -149,7 +132,7 @@ def benchmark(
         r_seed: int | None = None) -> dict[str, dict[str, float]]:
     model = get_example_model(name_bn)
     sampling = BayesianModelSampling(model)
-    clients_train_vars = split_vars(model, nr_clients, r_seed)
+    clients_train_vars = split_vars(model, nr_clients, seed=r_seed)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         clients_train_samples = [
@@ -169,6 +152,43 @@ def benchmark(
     ]
 
     return _get_test_results(test_samples, model, trained_models, evidence_vars, query_vars)
+
+
+def _overlap_communities(
+        communities:  list[set[str]],
+        nr_overlaps: int,
+        shuffled_edges: deque[tuple[str, str]]) -> None:
+    node_to_community: dict[str, int] = {}
+    overlap_nodes: set[str] = set()
+    overlapped_communities: set[int] = set()
+
+    for i, community in enumerate(communities):
+        node_to_community.update({node: i for node in community})
+
+    while (
+        shuffled_edges and
+        (len(overlapped_communities) < len(communities) or len(overlap_nodes) < nr_overlaps)
+    ):
+        node_out, node_inc = shuffled_edges.popleft()
+        community_node_out = node_to_community[node_out]
+        community_node_inc = node_to_community[node_inc]
+
+        if community_node_out == community_node_inc:
+            continue
+
+        edge_nodes_communities = set([community_node_out, community_node_inc])
+
+        if (
+            len(overlapped_communities) < len(communities) and
+            edge_nodes_communities <= overlapped_communities
+        ):
+            shuffled_edges.append((node_out, node_inc))
+        else:
+            overlap_nodes.add(node_out)
+            overlap_nodes.add(node_inc)
+            overlapped_communities.update(edge_nodes_communities)
+            communities[community_node_out].add(node_inc)
+            communities[community_node_inc].add(node_out)
 
 
 def _get_test_results(
@@ -191,11 +211,3 @@ def _get_test_results(
         )
 
     return res
-
-
-def _find_parent(node: str, node_to_parent: dict[str, str]) -> str:
-    parent = node
-    while node_to_parent[parent] != parent:
-        node_to_parent[parent] = node_to_parent[node_to_parent[parent]]
-        parent = node_to_parent[parent]
-    return parent
