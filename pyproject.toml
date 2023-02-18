@@ -6,7 +6,7 @@ authors = ["Abele Mălan <abele.malan@asml.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 pgmpy = "^0.1.21"
 numpy = "^1.24.2"
 pandas = "^1.5.3"
@@ -21,6 +21,12 @@ matplotlib = "^3.6.3"
 scikit-learn = "^1.2.1"
 prospector = { version = "^1.8.4", extras = ["with_bandit"] }
 # ruff = "^0.0.241"
+
+[[tool.poetry.source]]
+name = "asml"
+url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
+default = true
+secondary = false
 
 [build-system]
 requires = ["poetry-core"]

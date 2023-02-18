@@ -1,9 +1,9 @@
 {
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true,
+    },
     "files.insertFinalNewline": true,
     "files.trimTrailingWhitespace": true,
     "python.analysis.typeCheckingMode": "basic",
     "python.linting.prospectorEnabled": true,
-    "editor.codeActionsOnSave": {
-        "source.organizeImports": true,
-    },
 }
