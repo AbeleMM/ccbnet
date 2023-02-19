@@ -6,6 +6,7 @@ from random import Random
 from typing import Collection, cast
 
 import networkx as nx
+import numpy as np
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from pandas import DataFrame
@@ -14,6 +15,7 @@ from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 from pgmpy.utils import get_example_model
+from sklearn.metrics import f1_score
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 
@@ -211,3 +213,34 @@ def _get_test_results(
         )
 
     return res
+
+
+def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir=True) -> np.ndarray:
+    model_transformed = model if preserve_dir else model.to_undirected()
+    return nx.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
+
+
+def _f1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
+    true_adj = _bn_to_adj_mat(true_model)
+    estimated_adj = _bn_to_adj_mat(estimated_model)
+
+    return cast(float, f1_score(np.ravel(true_adj), np.ravel(estimated_adj)))
+
+
+# https://github.com/FenTechSolutions/CausalDiscoveryToolbox/blob/master/cdt/metrics.py
+def _shd_score(
+        true_model: BayesianNetwork,
+        estimated_model: BayesianNetwork,
+        double_for_anticausal=True) -> float:
+    true_adj = _bn_to_adj_mat(true_model)
+    estimated_adj = _bn_to_adj_mat(estimated_model)
+
+    diff = np.abs(true_adj - estimated_adj)
+
+    if double_for_anticausal:
+        return np.sum(diff)
+
+    diff = diff + diff.transpose()
+    diff[diff > 1] = 1
+
+    return float(np.sum(diff) / 2)
