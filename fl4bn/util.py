@@ -46,8 +46,8 @@ def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
 def split_vars(
         bayes_net: BayesianNetwork,
         nr_splits: int,
+        overlap_proportion: float,
         connected=True,
-        overlap_proportion=0.2,
         seed: int | None = None) -> list[list[str]]:
     rand = Random(seed)  # nosec
     nr_overlaps = round(overlap_proportion * len(bayes_net.nodes()))
@@ -75,7 +75,7 @@ def split_vars(
     rand.shuffle(shuffled_edges)
     _overlap_communities(communities, nr_overlaps, deque(shuffled_edges))
 
-    return [list(community) for community in communities]
+    return [sorted(community) for community in communities]
 
 
 @_memory.cache
@@ -130,11 +130,13 @@ def benchmark(
         name_bn: str,
         nr_clients: int,
         test_counts: int,
+        overlap: float = 0.4,
         samples_per_node: int = 5000,
-        r_seed: int | None = None) -> dict[str, dict[str, float]]:
+        r_seed: int | None = None) -> None:
     model = get_example_model(name_bn)
     sampling = BayesianModelSampling(model)
-    clients_train_vars = split_vars(model, nr_clients, seed=r_seed)
+    clients_train_vars = split_vars(model, nr_clients, overlap, seed=r_seed)
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         clients_train_samples = [
@@ -146,6 +148,7 @@ def benchmark(
             for vars in clients_train_vars
         ]
         test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
+
     evidence_vars, query_vars = get_in_out_nodes(model)
     max_in_deg = Counter(e[1] for e in model.edges()).most_common(1)[0][1]
     trained_models = [
@@ -153,7 +156,29 @@ def benchmark(
         for client_samples in clients_train_samples
     ]
 
-    return _get_test_results(test_samples, model, trained_models, evidence_vars, query_vars)
+    method_to_bn = {"Ground truth": model}
+
+    for method in CombineMethod:
+        # TODO switch to combine_bns_weighted (by amount of samples)
+        method_to_bn[method.value] = combine_bns(trained_models, method)
+
+    print("ACCURACY\n")
+    for method, bayes_net in method_to_bn.items():
+        print(method)
+        print(calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars))
+    print("\n")
+
+    print("STRUCTURE F1\n")
+    for method, bayes_net in method_to_bn.items():
+        print(method)
+        print(_sf1_score(model, bayes_net))
+    print("\n")
+
+    print("SHD\n")
+    for method, bayes_net in method_to_bn.items():
+        print(method)
+        print(_shd_score(model, bayes_net))
+    print("\n")
 
 
 def _overlap_communities(
@@ -193,36 +218,14 @@ def _overlap_communities(
             communities[community_node_inc].add(node_out)
 
 
-def _get_test_results(
-        test_samples: DataFrame,
-        model: BayesianNetwork,
-        trained_models: list[BayesianNetwork],
-        evidence_vars: list[str],
-        query_vars: list[str]) -> dict[str, dict[str, float]]:
-    res = {
-        "Ground truth": calc_accuracy(test_samples, model, evidence_vars, query_vars)
-    }
-
-    for method in CombineMethod:
-        res[method.value] = calc_accuracy(
-            test_samples,
-            # TODO switch to combine_bns_weighted (by amount of samples)
-            combine_bns(trained_models, method),
-            evidence_vars,
-            query_vars
-        )
-
-    return res
-
-
-def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir=True) -> np.ndarray:
+def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir) -> np.ndarray:
     model_transformed = model if preserve_dir else model.to_undirected()
     return nx.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
 
 
-def _f1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
-    true_adj = _bn_to_adj_mat(true_model)
-    estimated_adj = _bn_to_adj_mat(estimated_model)
+def _sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
+    true_adj = _bn_to_adj_mat(true_model, False)
+    estimated_adj = _bn_to_adj_mat(estimated_model, False)
 
     return cast(float, f1_score(np.ravel(true_adj), np.ravel(estimated_adj)))
 
@@ -232,8 +235,8 @@ def _shd_score(
         true_model: BayesianNetwork,
         estimated_model: BayesianNetwork,
         double_for_anticausal=True) -> float:
-    true_adj = _bn_to_adj_mat(true_model)
-    estimated_adj = _bn_to_adj_mat(estimated_model)
+    true_adj = _bn_to_adj_mat(true_model, True)
+    estimated_adj = _bn_to_adj_mat(estimated_model, True)
 
     diff = np.abs(true_adj - estimated_adj)
 
