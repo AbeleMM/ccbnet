@@ -181,7 +181,7 @@ def benchmark_multi(
         ]
         test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
         evidence_vars, query_vars = get_in_out_nodes(ref_model)
-        max_in_deg = Counter(e[1] for e in ref_model.edges()).most_common(1)[0][1]
+        (_, max_in_deg), *_ = Counter(e[1] for e in ref_model.edges()).most_common(1)
 
         for overlap in np.arange(0.0, 0.6, 0.1):
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)

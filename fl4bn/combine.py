@@ -76,10 +76,8 @@ def combine_bns_weighted(
                     try:
                         bn_combined.add_edge(parent, node)
                         parents_union.append(parent)
-                    except ValueError as val_err:
-                        # TODO potentially remove condition
-                        if method != CombineMethod.UNION:
-                            raise val_err
+                    except ValueError:
+                        pass
 
                 node_cpd = TabularCPD(
                     variable=node,
@@ -133,8 +131,13 @@ def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float]) -> Bay
 
 
 def _preserve_from_bn(tgt_bn: BayesianNetwork, node: str, src_bn: BayesianNetwork) -> None:
-    tgt_bn.add_edges_from([(p, node) for p in src_bn.get_parents(node)])
-    tgt_bn.add_cpds(src_bn.get_cpds(node))
+    cpd = cast(TabularCPD, src_bn.get_cpds(node)).copy()
+    for parent in cast(list[str], src_bn.get_parents(node)):
+        try:
+            tgt_bn.add_edge(parent, node)
+        except ValueError:
+            cpd.marginalize([parent], inplace=True)
+    tgt_bn.add_cpds(cpd)
 
 
 def _get_superposition(l_val: float, r_val: float) -> float:
