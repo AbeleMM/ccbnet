@@ -3,10 +3,11 @@ from collections import Counter, deque
 from math import ceil
 from pathlib import Path
 from random import Random
-from typing import Collection, cast
+from typing import Any, Collection, cast
 
 import networkx as nx
 import numpy as np
+import pandas as pd
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from pandas import DataFrame
@@ -14,10 +15,11 @@ from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
-from pgmpy.utils import get_example_model
 from sklearn.metrics import f1_score
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
+_BENCHMARK_INDEX = "Overlap"
+BENCHMARK_PIVOT_COL = "Method"
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -126,62 +128,79 @@ def calc_accuracy(
     return accuracy
 
 
-def benchmark(
-        name_bn: str,
+def benchmark_single(
+        ref_model: BayesianNetwork,
+        trained_models: list[BayesianNetwork],
+        test_samples: DataFrame,
+        evidence_vars: list[str],
+        query_vars: list[str]) -> DataFrame:
+    ref_accuracy = calc_accuracy(test_samples, ref_model, evidence_vars, query_vars)
+    res_single: list[dict[str, Any]] = []
+
+    for method in CombineMethod:
+        # TODO switch to combine_bns_weighted (by amount of samples)
+        bayes_net = combine_bns(trained_models, method)
+        row: dict[str, Any] = {BENCHMARK_PIVOT_COL: method.value}
+
+        acc = 0.0
+
+        for k, val in calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars).items():
+            acc += val / ref_accuracy[k]
+
+        acc /= len(ref_accuracy)
+        row["Relative Accuracy"] = round(acc, 3)
+
+        row["Structure F1"] = round(sf1_score(ref_model, bayes_net), 3)
+
+        row["SHD"] = round(shd_score(ref_model, bayes_net), 3)
+
+        res_single.append(row)
+
+    return pd.DataFrame.from_records(res_single)
+
+
+def benchmark_multi(
+        ref_model: BayesianNetwork,
         nr_clients: int,
         test_counts: int = 2000,
-        overlap: float = 0.4,
-        samples_per_node: int = 5000,
-        r_seed: int | None = None) -> None:
-    model = get_example_model(name_bn)
-    sampling = BayesianModelSampling(model)
-    clients_train_vars = split_vars(model, nr_clients, overlap, seed=r_seed)
+        samples_factor: int = 50000,
+        r_seed: int | None = None) -> DataFrame:
+    sampling = BayesianModelSampling(ref_model)
+    samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
+    res_multi = DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         clients_train_samples = [
             sampling.forward_sample(
-                size=samples_per_node * len(vars),
+                size=samples_per_client,
                 seed=r_seed,
                 show_progress=False
-            )[vars]
-            for vars in clients_train_vars
+            )
+            for _ in range(nr_clients)
         ]
         test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
+        evidence_vars, query_vars = get_in_out_nodes(ref_model)
+        max_in_deg = Counter(e[1] for e in ref_model.edges()).most_common(1)[0][1]
 
-    evidence_vars, query_vars = get_in_out_nodes(model)
-    max_in_deg = Counter(e[1] for e in model.edges()).most_common(1)[0][1]
-    trained_models = [
-        train_model(client_samples, max_in_deg)
-        for client_samples in clients_train_samples
-    ]
+        for overlap in np.arange(0.0, 0.6, 0.1):
+            clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)
 
-    method_to_bn: dict[str, BayesianNetwork] = {}
+            trained_models = [
+                train_model(clients_train_samples[i][train_vars], max_in_deg)
+                for i, train_vars in enumerate(clients_train_vars)
+            ]
 
-    for method in CombineMethod:
-        # TODO switch to combine_bns_weighted (by amount of samples)
-        method_to_bn[method.value] = combine_bns(trained_models, method)
+            res_single = benchmark_single(
+                ref_model, trained_models, test_samples, evidence_vars, query_vars
+            )
+            res_single[_BENCHMARK_INDEX] = overlap
 
-    ground_truth_accuracy = calc_accuracy(test_samples, model, evidence_vars, query_vars)
+            res_multi = pd.concat([res_multi, res_single], ignore_index=True, copy=False)
 
-    print("RELATIVE ACCURACY\n")
-    for method, bayes_net in method_to_bn.items():
-        acc = 0.0
-        for k, val in calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars).items():
-            acc += val / ground_truth_accuracy[k]
-        acc /= len(ground_truth_accuracy)
-        print(method, round(acc, 3))
-    print("\n")
+    res_multi.set_index(_BENCHMARK_INDEX, inplace=True)
 
-    print("STRUCTURE F1\n")
-    for method, bayes_net in method_to_bn.items():
-        print(method, round(_sf1_score(model, bayes_net), 3))
-    print("\n")
-
-    print("STRUCTURAL HAMMING DISTANCE\n")
-    for method, bayes_net in method_to_bn.items():
-        print(method, round(_shd_score(model, bayes_net), 3))
-    print("\n")
+    return res_multi
 
 
 def _overlap_communities(
@@ -226,7 +245,7 @@ def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir) -> np.ndarray:
     return nx.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
 
 
-def _sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
+def sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
     true_adj = _bn_to_adj_mat(true_model, False)
     estimated_adj = _bn_to_adj_mat(estimated_model, False)
 
@@ -234,7 +253,7 @@ def _sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) ->
 
 
 # https://github.com/FenTechSolutions/CausalDiscoveryToolbox/blob/master/cdt/metrics.py
-def _shd_score(
+def shd_score(
         true_model: BayesianNetwork,
         estimated_model: BayesianNetwork,
         double_for_anticausal=True) -> float:
