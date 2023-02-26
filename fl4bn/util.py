@@ -129,7 +129,7 @@ def calc_accuracy(
 def benchmark(
         name_bn: str,
         nr_clients: int,
-        test_counts: int,
+        test_counts: int = 2000,
         overlap: float = 0.4,
         samples_per_node: int = 5000,
         r_seed: int | None = None) -> None:
@@ -156,28 +156,31 @@ def benchmark(
         for client_samples in clients_train_samples
     ]
 
-    method_to_bn = {"Ground truth": model}
+    method_to_bn: dict[str, BayesianNetwork] = {}
 
     for method in CombineMethod:
         # TODO switch to combine_bns_weighted (by amount of samples)
         method_to_bn[method.value] = combine_bns(trained_models, method)
 
-    print("ACCURACY\n")
+    ground_truth_accuracy = calc_accuracy(test_samples, model, evidence_vars, query_vars)
+
+    print("RELATIVE ACCURACY\n")
     for method, bayes_net in method_to_bn.items():
-        print(method)
-        print(calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars))
+        acc = 0.0
+        for k, val in calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars).items():
+            acc += val / ground_truth_accuracy[k]
+        acc /= len(ground_truth_accuracy)
+        print(method, round(acc, 3))
     print("\n")
 
     print("STRUCTURE F1\n")
     for method, bayes_net in method_to_bn.items():
-        print(method)
-        print(_sf1_score(model, bayes_net))
+        print(method, round(_sf1_score(model, bayes_net), 3))
     print("\n")
 
-    print("SHD\n")
+    print("STRUCTURAL HAMMING DISTANCE\n")
     for method, bayes_net in method_to_bn.items():
-        print(method)
-        print(_shd_score(model, bayes_net))
+        print(method, round(_shd_score(model, bayes_net), 3))
     print("\n")
 
 
