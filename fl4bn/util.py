@@ -3,7 +3,7 @@ from collections import Counter, deque
 from math import ceil
 from pathlib import Path
 from random import Random
-from typing import Any, Collection, cast
+from typing import Collection, cast
 
 import networkx as nx
 import numpy as np
@@ -19,7 +19,7 @@ from sklearn.metrics import f1_score
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX = "Overlap"
-BENCHMARK_PIVOT_COL = "Method"
+BENCHMARK_PIVOT_COL = "Name"
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -106,6 +106,7 @@ def train_model(samples: DataFrame, max_nr_parents: int) -> BayesianNetwork:
     return bayes_net
 
 
+@_memory.cache
 def calc_accuracy(
         test_df: DataFrame, bayes_net: BayesianNetwork,
         e_vars: list[str], q_vars: list[str]) -> dict[str, float]:
@@ -133,26 +134,37 @@ def benchmark_single(
         trained_models: list[BayesianNetwork],
         test_samples: DataFrame,
         evidence_vars: list[str],
-        query_vars: list[str]) -> DataFrame:
+        query_vars: list[str],
+        learnt_model: BayesianNetwork | None = None) -> DataFrame:
     ref_accuracy = calc_accuracy(test_samples, ref_model, evidence_vars, query_vars)
-    res_single: list[dict[str, Any]] = []
+    res_single: list[dict[str, float | str]] = []
+
+    name_to_bn: dict[str, BayesianNetwork] = {"Reference": ref_model}
+    if learnt_model:
+        name_to_bn["Learnt"] = learnt_model
 
     for method in CombineMethod:
         # TODO switch to combine_bns_weighted (by amount of samples)
-        bayes_net = combine_bns(trained_models, method)
-        row: dict[str, Any] = {BENCHMARK_PIVOT_COL: method.value}
+        name_to_bn[method.value] = combine_bns(trained_models, method)
 
-        acc = 0.0
+    for name, model in name_to_bn.items():
+        row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
+        acc_abs = 0.0
+        # acc_rel = 0.0
 
-        for k, val in calc_accuracy(test_samples, bayes_net, evidence_vars, query_vars).items():
-            acc += val / ref_accuracy[k]
+        for k, val in calc_accuracy(test_samples, model, evidence_vars, query_vars).items():
+            acc_abs += val
+            # acc_rel += val / ref_accuracy[k]
 
-        acc /= len(ref_accuracy)
-        row["Relative Accuracy"] = round(acc, 3)
+        acc_abs /= len(ref_accuracy)
+        row["Average Absolute Accuracy (%)"] = round(acc_abs, 3)
 
-        row["Structure F1"] = round(sf1_score(ref_model, bayes_net), 3)
+        # acc_rel /= len(ref_accuracy)
+        # row["Average Relative Accuracy"] = round(acc_rel, 3)
 
-        row["SHD"] = round(shd_score(ref_model, bayes_net), 3)
+        row["Structure F1"] = round(sf1_score(ref_model, model), 3)
+
+        row["SHD"] = round(shd_score(ref_model, model), 3)
 
         res_single.append(row)
 
@@ -164,6 +176,8 @@ def benchmark_multi(
         nr_clients: int,
         test_counts: int = 2000,
         samples_factor: int = 50000,
+        include_learnt=False,
+        in_out_inf_vars=True,
         r_seed: int | None = None) -> DataFrame:
     sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
@@ -180,8 +194,22 @@ def benchmark_multi(
             for _ in range(nr_clients)
         ]
         test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
-        evidence_vars, query_vars = get_in_out_nodes(ref_model)
-        (_, max_in_deg), *_ = Counter(e[1] for e in ref_model.edges()).most_common(1)
+        (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
+
+        if in_out_inf_vars:
+            evidence_vars, query_vars = get_in_out_nodes(ref_model)
+        else:
+            rand = Random(r_seed)  # nosec
+            shuffled_nodes: list[str] = list(ref_model.nodes())
+            rand.shuffle(shuffled_nodes)
+            mid_ind = len(shuffled_nodes) // 2
+            evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
+
+        if include_learnt:
+            samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
+            learnt_model = train_model(samples, max_in_deg)
+        else:
+            learnt_model = None
 
         for overlap in np.arange(0.0, 0.6, 0.1):
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)
@@ -192,9 +220,9 @@ def benchmark_multi(
             ]
 
             res_single = benchmark_single(
-                ref_model, trained_models, test_samples, evidence_vars, query_vars
+                ref_model, trained_models, test_samples, evidence_vars, query_vars, learnt_model
             )
-            res_single[_BENCHMARK_INDEX] = overlap
+            res_single[_BENCHMARK_INDEX] = round(overlap, 1)
 
             res_multi = pd.concat([res_multi, res_single], ignore_index=True, copy=False)
 

@@ -76,6 +76,7 @@ def combine_bns_weighted(
                     try:
                         bn_combined.add_edge(parent, node)
                         parents_union.append(parent)
+                    # TODO improve handling of cycles
                     except ValueError:
                         pass
 
@@ -135,6 +136,7 @@ def _preserve_from_bn(tgt_bn: BayesianNetwork, node: str, src_bn: BayesianNetwor
     for parent in cast(list[str], src_bn.get_parents(node)):
         try:
             tgt_bn.add_edge(parent, node)
+        # TODO improve handling of cycles
         except ValueError:
             cpd.marginalize([parent], inplace=True)
     tgt_bn.add_cpds(cpd)
