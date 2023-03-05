@@ -2,3 +2,4 @@ poetry.toml
 __pycache__/
 .ipynb_checkpoints/
 cache/
+out/

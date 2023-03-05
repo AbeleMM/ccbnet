@@ -3,6 +3,7 @@ from collections import Counter, deque
 from math import ceil
 from pathlib import Path
 from random import Random
+from time import time
 from typing import Collection, cast
 
 import networkx as nx
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 from combine import CombineMethod, combine_bns
 from joblib import Memory
-from pandas import DataFrame
+from matplotlib.axes import Axes
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
@@ -81,7 +82,7 @@ def split_vars(
 
 
 @_memory.cache
-def train_model(samples: DataFrame, max_nr_parents: int) -> BayesianNetwork:
+def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
     est = HillClimbSearch(data=samples, use_cache=True)
 
     with warnings.catch_warnings():
@@ -108,7 +109,7 @@ def train_model(samples: DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
 @_memory.cache
 def calc_accuracy(
-        test_df: DataFrame, bayes_net: BayesianNetwork,
+        test_df: pd.DataFrame, bayes_net: BayesianNetwork,
         e_vars: list[str], q_vars: list[str]) -> dict[str, float]:
     bn_infer = VariableElimination(bayes_net)
     accuracy = {v: 0 for v in q_vars}
@@ -132,10 +133,10 @@ def calc_accuracy(
 def benchmark_single(
         ref_model: BayesianNetwork,
         trained_models: list[BayesianNetwork],
-        test_samples: DataFrame,
+        test_samples: pd.DataFrame,
         evidence_vars: list[str],
         query_vars: list[str],
-        learnt_model: BayesianNetwork | None = None) -> DataFrame:
+        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
     ref_accuracy = calc_accuracy(test_samples, ref_model, evidence_vars, query_vars)
     res_single: list[dict[str, float | str]] = []
 
@@ -178,10 +179,10 @@ def benchmark_multi(
         samples_factor: int = 50000,
         include_learnt=False,
         in_out_inf_vars=True,
-        r_seed: int | None = None) -> DataFrame:
+        r_seed: int | None = None) -> pd.DataFrame:
     sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
-    res_multi = DataFrame()
+    res_multi = pd.DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -297,3 +298,12 @@ def shd_score(
     diff[diff > 1] = 1
 
     return float(np.sum(diff) / 2)
+
+
+class ExpWriter():
+    def __init__(self) -> None:
+        self.res_dir = Path(__file__).parents[1] / "out" / str(int(time()))
+        self.res_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_fig(self, axes: Axes, name: str) -> None:
+        axes.get_figure().savefig(str(self.res_dir / name))
