@@ -6,6 +6,7 @@ from random import Random
 from time import time
 from typing import Collection, cast
 
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -76,9 +77,7 @@ def split_vars(
 
     shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
     rand.shuffle(shuffled_edges)
-    _overlap_communities(communities, nr_overlaps, deque(shuffled_edges))
-
-    return [sorted(community) for community in communities]
+    return _overlap_communities(communities, nr_overlaps, shuffled_edges)
 
 
 @_memory.cache
@@ -233,21 +232,22 @@ def benchmark_multi(
 
 
 def _overlap_communities(
-        communities:  list[set[str]],
+        community_sets:  list[set[str]],
         nr_overlaps: int,
-        shuffled_edges: deque[tuple[str, str]]) -> None:
+        shuffled_edges: list[tuple[str, str]]) -> list[list[str]]:
     node_to_community: dict[str, int] = {}
     overlap_nodes: set[str] = set()
     overlapped_communities: set[int] = set()
+    remaining_edges: list[tuple[str, str]] = []
+    community_lists: list[list[str]] = [list(community) for community in community_sets]
 
-    for i, community in enumerate(communities):
+    for i, community in enumerate(community_lists):
         node_to_community.update({node: i for node in community})
 
-    while (
-        shuffled_edges and
-        (len(overlapped_communities) < len(communities) or len(overlap_nodes) < nr_overlaps)
-    ):
-        node_out, node_inc = shuffled_edges.popleft()
+    for node_out, node_inc in shuffled_edges:
+        if len(overlap_nodes) >= nr_overlaps:
+            break
+
         community_node_out = node_to_community[node_out]
         community_node_inc = node_to_community[node_inc]
 
@@ -257,19 +257,33 @@ def _overlap_communities(
         edge_nodes_communities = set([community_node_out, community_node_inc])
 
         if (
-            len(overlapped_communities) < len(communities) and
+            len(overlapped_communities) < len(community_lists) and
             edge_nodes_communities <= overlapped_communities
         ):
-            shuffled_edges.append((node_out, node_inc))
+            remaining_edges.append((node_out, node_inc))
         else:
             overlap_nodes.add(node_out)
             overlap_nodes.add(node_inc)
             overlapped_communities.update(edge_nodes_communities)
-            communities[community_node_out].add(node_inc)
-            communities[community_node_inc].add(node_out)
+            community_lists[community_node_out].append(node_inc)
+            community_lists[community_node_inc].append(node_out)
+
+    for node_out, node_inc in remaining_edges:
+        if len(overlap_nodes) >= nr_overlaps:
+            break
+
+        overlap_nodes.add(node_out)
+        overlap_nodes.add(node_inc)
+        community_lists[node_to_community[node_out]].append(node_inc)
+        community_lists[node_to_community[node_inc]].append(node_out)
+
+    for community in community_lists:
+        community.sort()
+
+    return community_lists
 
 
-def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir) -> np.ndarray:
+def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir: bool) -> np.ndarray:
     model_transformed = model if preserve_dir else model.to_undirected()
     return nx.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
 
@@ -306,4 +320,6 @@ class ExpWriter():
         self.res_dir.mkdir(parents=True, exist_ok=True)
 
     def save_fig(self, axes: Axes, name: str) -> None:
-        axes.get_figure().savefig(str(self.res_dir / name))
+        fig = axes.get_figure()
+        fig.savefig(str(self.res_dir / name), bbox_inches="tight")
+        plt.close(fig)
