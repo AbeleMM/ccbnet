@@ -1,5 +1,5 @@
 import warnings
-from collections import Counter, deque
+from collections import Counter
 from math import ceil
 from pathlib import Path
 from random import Random
@@ -239,9 +239,8 @@ def _overlap_communities(
     overlap_nodes: set[str] = set()
     overlapped_communities: set[int] = set()
     remaining_edges: list[tuple[str, str]] = []
-    community_lists: list[list[str]] = [list(community) for community in community_sets]
 
-    for i, community in enumerate(community_lists):
+    for i, community in enumerate(community_sets):
         node_to_community.update({node: i for node in community})
 
     for node_out, node_inc in shuffled_edges:
@@ -257,7 +256,7 @@ def _overlap_communities(
         edge_nodes_communities = set([community_node_out, community_node_inc])
 
         if (
-            len(overlapped_communities) < len(community_lists) and
+            len(overlapped_communities) < len(community_sets) and
             edge_nodes_communities <= overlapped_communities
         ):
             remaining_edges.append((node_out, node_inc))
@@ -265,8 +264,8 @@ def _overlap_communities(
             overlap_nodes.add(node_out)
             overlap_nodes.add(node_inc)
             overlapped_communities.update(edge_nodes_communities)
-            community_lists[community_node_out].append(node_inc)
-            community_lists[community_node_inc].append(node_out)
+            community_sets[community_node_out].add(node_inc)
+            community_sets[community_node_inc].add(node_out)
 
     for node_out, node_inc in remaining_edges:
         if len(overlap_nodes) >= nr_overlaps:
@@ -274,13 +273,10 @@ def _overlap_communities(
 
         overlap_nodes.add(node_out)
         overlap_nodes.add(node_inc)
-        community_lists[node_to_community[node_out]].append(node_inc)
-        community_lists[node_to_community[node_inc]].append(node_out)
+        community_sets[node_to_community[node_out]].add(node_inc)
+        community_sets[node_to_community[node_inc]].add(node_out)
 
-    for community in community_lists:
-        community.sort()
-
-    return community_lists
+    return [sorted(community) for community in community_sets]
 
 
 def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir: bool) -> np.ndarray:
