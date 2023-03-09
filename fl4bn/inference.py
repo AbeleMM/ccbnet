@@ -1,5 +1,6 @@
 from typing import Collection, cast
 
+import numpy as np
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -56,6 +57,27 @@ def elimination_ask(
     product_factors.normalize(inplace=True)
 
     return product_factors
+
+
+def disjoint_elimination_ask(
+        bayes_net: BayesianNetwork,
+        query: set[str],
+        evidence: dict[str, str]) -> dict[str, DiscreteFactor]:
+    factor = elimination_ask(bayes_net, query, evidence)
+    return {
+        var: cast(DiscreteFactor, factor.marginalize(query - {var}, inplace=False))
+        for var in query
+    }
+
+
+def map_elimination_ask(
+        bayes_net: BayesianNetwork,
+        query: set[str],
+        evidence: dict[str, str]) -> dict[str, str]:
+    factor = elimination_ask(bayes_net, query, evidence)
+    argmax = np.argmax(factor.values)
+    assignment, *_ = cast(list[list[tuple[str, str]]], factor.assignment([argmax]))
+    return dict(assignment)
 
 
 def elimination_ask_alt(
