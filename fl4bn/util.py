@@ -149,18 +149,9 @@ def benchmark_single(
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        acc_abs = 0.0
-        # acc_rel = 0.0
-
-        for k, val in calc_accuracy(test_samples, model, evidence_vars, query_vars).items():
-            acc_abs += val
-            # acc_rel += val / ref_accuracy[k]
-
+        acc_abs = sum(calc_accuracy(test_samples, model, evidence_vars, query_vars).values())
         acc_abs /= len(ref_accuracy)
         row["Average Absolute Accuracy (%)"] = round(acc_abs, 3)
-
-        # acc_rel /= len(ref_accuracy)
-        # row["Average Relative Accuracy"] = round(acc_rel, 3)
 
         row["Structure F1"] = round(sf1_score(ref_model, model), 3)
 

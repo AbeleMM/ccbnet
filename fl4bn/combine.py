@@ -4,6 +4,7 @@ from enum import Enum
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 from pgmpy.factors.discrete.CPD import TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -148,7 +149,7 @@ def _get_superposition(l_val: float, r_val: float) -> float:
 
 def _get_ext_node_values(
         node: str, parents_union: list[str],
-        node_to_vals: dict[str, list], node_bns: list[BayesianNetwork]) -> np.ndarray:
+        node_to_vals: dict[str, list], node_bns: list[BayesianNetwork]) -> npt.NDArray[np.float_]:
     nr_node_vals: int = len(node_to_vals[node])
     transp_table: list[list[float]] = []
 
