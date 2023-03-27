@@ -1,9 +1,9 @@
 import warnings
 from collections import Counter
+from datetime import datetime, timezone
 from math import ceil
 from pathlib import Path
 from random import Random
-from time import time
 from typing import Collection, cast
 
 import matplotlib.pyplot as plt
@@ -303,7 +303,8 @@ def shd_score(
 
 class ExpWriter():
     def __init__(self) -> None:
-        self.res_dir = Path(__file__).parents[1] / "out" / str(int(time()))
+        time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+        self.res_dir = Path(__file__).parents[1] / "out" / time_str
         self.res_dir.mkdir(parents=True, exist_ok=True)
 
     def save_fig(self, axes: Axes, name: str) -> None:
