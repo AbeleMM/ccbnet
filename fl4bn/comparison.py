@@ -1,6 +1,7 @@
 from typing import cast
 
 from matplotlib.axes import Axes
+from matplotlib.container import BarContainer
 from pgmpy.utils import get_example_model
 from util import BENCHMARK_PIVOT_COL, ExpWriter, benchmark_multi
 
@@ -14,7 +15,13 @@ def plot_model_results(
 
     for metric in [col for col in res.columns if col != BENCHMARK_PIVOT_COL]:
         pivoted_res = res.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
-        axes = cast(Axes, pivoted_res.plot(kind="bar", title=model_name, ylabel=metric))
+        axes = cast(
+            Axes,
+            pivoted_res.plot(kind="barh", title=model_name, xlabel=metric, width=0.9)
+        )
+        for container in cast(list[BarContainer], getattr(axes, "containers")):
+            axes.bar_label(container, label_type="center", fontsize="xx-small")
+        # axes.legend(mode="expand")
         if exp_writer:
             name = f"{model_name}_{'inout' if in_out_inf_vars else 'halves'}_{metric}"
             exp_writer.save_fig(axes, name)

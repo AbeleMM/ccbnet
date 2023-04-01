@@ -157,6 +157,8 @@ def benchmark_single(
 
         row["SHD"] = round(shd_score(ref_model, model), 3)
 
+        row["Edge Count"] = len(model.edges())
+
         res_single.append(row)
 
     return pd.DataFrame.from_records(res_single)
@@ -309,5 +311,5 @@ class ExpWriter():
 
     def save_fig(self, axes: Axes, name: str) -> None:
         fig = axes.get_figure()
-        fig.savefig(str(self.res_dir / name), bbox_inches="tight")
+        fig.savefig(str((self.res_dir / name).with_suffix(".png")), bbox_inches="tight")
         plt.close(fig)
