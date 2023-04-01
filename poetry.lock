@@ -2704,6 +2704,31 @@ url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
 reference = "asml"
 
 [[package]]
+name = "plumbum"
+version = "1.8.1"
+description = "Plumbum: shell combinators library"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "plumbum-1.8.1-py3-none-any.whl", hash = "sha256:07cf5f50bf739e91fb83ce304fc66b41dbd12db4d4546ff5266087dd9d148314"},
+    {file = "plumbum-1.8.1.tar.gz", hash = "sha256:88a40fc69247d0cd585e21ca169b3820f46c484535102e16455d2202727bb37b"},
+]
+
+[package.dependencies]
+pywin32 = {version = "*", markers = "platform_system == \"Windows\" and platform_python_implementation != \"PyPy\""}
+
+[package.extras]
+dev = ["paramiko", "psutil", "pytest (>=6.0)", "pytest-cov", "pytest-mock", "pytest-timeout"]
+docs = ["sphinx (>=4.0.0)", "sphinx-rtd-theme (>=1.0.0)"]
+ssh = ["paramiko"]
+
+[package.source]
+type = "legacy"
+url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
+reference = "asml"
+
+[[package]]
 name = "poetry-semver"
 version = "0.1.0"
 description = "A semantic versioning library for Python"
@@ -3207,7 +3232,7 @@ reference = "asml"
 name = "pywin32"
 version = "306"
 description = "Python for Window Extensions"
-category = "dev"
+category = "main"
 optional = false
 python-versions = "*"
 files = [
@@ -3508,6 +3533,26 @@ pygments = ">=2.13.0,<3.0.0"
 
 [package.extras]
 jupyter = ["ipywidgets (>=7.5.1,<9)"]
+
+[package.source]
+type = "legacy"
+url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
+reference = "asml"
+
+[[package]]
+name = "rpyc"
+version = "5.3.1"
+description = "Remote Python Call (RPyC) is a transparent and symmetric distributed computing library"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "rpyc-5.3.1-py3-none-any.whl", hash = "sha256:6e8153792ac221a80f420d2e0b241a10c6e43b105d325998b18a4e7af329f9ec"},
+    {file = "rpyc-5.3.1.tar.gz", hash = "sha256:f2233174879faf18ae266437d5a65511ce46c817cec4edc1344f036758cfbf52"},
+]
+
+[package.dependencies]
+plumbum = "*"
 
 [package.source]
 type = "legacy"
@@ -4467,4 +4512,4 @@ reference = "asml"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "12ab48a690187eb84088540af272ad88dfa4a293e8e62f28b0a5dbc4e8949e8a"
+content-hash = "f252152e3d471b1d463d5bf60af4817dd26f5429b25b5e089ecbffa6151bbe09"
