@@ -11,6 +11,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from combine import CombineMethod, combine_bns
+from decentralized.client import Client, combine
 from joblib import Memory
 from matplotlib.axes import Axes
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
@@ -60,10 +61,13 @@ def split_vars(
         dfs_tree = nx.dfs_tree(bayes_net.to_undirected())
         communities: list[set[str]] = [
             set(community)
-            for community in nx.algorithms.community.greedy_modularity_communities(
-                dfs_tree,
-                cutoff=nr_splits,
-                best_n=nr_splits
+            for community in cast(
+                list[frozenset[str]],
+                nx.algorithms.community.greedy_modularity_communities(
+                    dfs_tree,
+                    cutoff=nr_splits,
+                    best_n=nr_splits
+                )
             )
         ]
     else:
@@ -106,22 +110,24 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
     return bayes_net
 
 
-@_memory.cache
 def calc_accuracy(
-        test_df: pd.DataFrame, bayes_net: BayesianNetwork,
+        test_df: pd.DataFrame, source: VariableElimination | Client,
         e_vars: list[str], q_vars: list[str]) -> dict[str, float]:
-    bn_infer = VariableElimination(bayes_net)
     accuracy = {v: 0 for v in q_vars}
 
     for _, row in test_df.iterrows():
-        query = cast(
-            dict[str, str],
-            bn_infer.map_query(
-                variables=q_vars,
-                evidence={v: row[v] for v in e_vars},
-                show_progress=False
+        evid = {v: row[v] for v in e_vars}
+        if isinstance(source, VariableElimination):
+            query = cast(
+                dict[str, str],
+                source.map_query(
+                    variables=q_vars,
+                    evidence=evid,
+                    show_progress=False
+                )
             )
-        )
+        else:
+            query = source.map_elimination_ask(set(q_vars), evid)
         for variable, value in query.items():
             accuracy[variable] += row[variable] == value
 
@@ -135,29 +141,43 @@ def benchmark_single(
         test_samples: pd.DataFrame,
         evidence_vars: list[str],
         query_vars: list[str],
-        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
-    ref_accuracy = calc_accuracy(test_samples, ref_model, evidence_vars, query_vars)
+        learnt_model: BayesianNetwork | None = None,
+        decentralized=False) -> pd.DataFrame:
+    ref_accuracy = calc_accuracy(
+        test_samples,
+        VariableElimination(ref_model),
+        evidence_vars,
+        query_vars
+    )
     res_single: list[dict[str, float | str]] = []
 
-    name_to_bn: dict[str, BayesianNetwork] = {"Reference": ref_model}
+    name_to_bn: dict[str, VariableElimination | Client] = {
+        "Reference": VariableElimination(ref_model)
+    }
     if learnt_model:
-        name_to_bn["Learnt"] = learnt_model
+        name_to_bn["Learnt"] = VariableElimination(learnt_model)
 
     for method in CombineMethod:
         # TODO switch to combine_bns_weighted (by amount of samples)
-        name_to_bn[method.value] = combine_bns(trained_models, method)
+        name_to_bn[method.value] = VariableElimination(combine_bns(trained_models, method))
+
+    if decentralized:
+        name_to_bn.pop(CombineMethod.SINGLE.value, None)
+        name_to_bn["Decentralized"] = combine(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         acc_abs = sum(calc_accuracy(test_samples, model, evidence_vars, query_vars).values())
         acc_abs /= len(ref_accuracy)
+
         row["Average Absolute Accuracy (%)"] = round(acc_abs, 3)
 
-        row["Structure F1"] = round(sf1_score(ref_model, model), 3)
+        if not decentralized:
+            row["Structure F1"] = round(sf1_score(ref_model, model), 3)
 
-        row["SHD"] = round(shd_score(ref_model, model), 3)
+            row["SHD"] = round(shd_score(ref_model, model), 3)
 
-        row["Edge Count"] = len(model.edges())
+            row["Edge Count"] = len(model.edges())
 
         res_single.append(row)
 
@@ -171,6 +191,7 @@ def benchmark_multi(
         samples_factor: int = 50000,
         include_learnt=False,
         in_out_inf_vars=True,
+        decentralized=False,
         r_seed: int | None = None) -> pd.DataFrame:
     sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
@@ -213,7 +234,8 @@ def benchmark_multi(
             ]
 
             res_single = benchmark_single(
-                ref_model, trained_models, test_samples, evidence_vars, query_vars, learnt_model
+                ref_model, trained_models, test_samples, evidence_vars, query_vars,
+                learnt_model, decentralized
             )
             res_single[_BENCHMARK_INDEX] = round(overlap, 1)
 
@@ -274,7 +296,7 @@ def _overlap_communities(
 
 def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir: bool) -> np.ndarray:
     model_transformed = model if preserve_dir else model.to_undirected()
-    return nx.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
+    return nx.convert_matrix.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
 
 
 def sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:

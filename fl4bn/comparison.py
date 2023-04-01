@@ -11,7 +11,7 @@ def plot_model_results(
         in_out_inf_vars: bool,
         exp_writer: ExpWriter | None = None) -> None:
     model = get_example_model(model_name)
-    res = benchmark_multi(model, 4, 2000, 50000, True, in_out_inf_vars, 42)
+    res = benchmark_multi(model, 4, 2000, 50000, True, in_out_inf_vars, True, 42)
 
     for metric in [col for col in res.columns if col != BENCHMARK_PIVOT_COL]:
         pivoted_res = res.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
