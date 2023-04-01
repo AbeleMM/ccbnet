@@ -157,15 +157,15 @@ def _get_ext_node_values(
         tt_row: list[float] = [0] * nr_node_vals
         for bayes_net in node_bns:
             cpd: TabularCPD = cast(TabularCPD, bayes_net.get_cpds(node)).copy()
-            cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
             cpd.reduce(
                 [
                     (parent, parent_inst[i])
                     for i, parent in enumerate(parents_union)
                     if parent in cpd.get_evidence()
                 ],
-                inplace=False
+                inplace=True
             )
+            cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
             # TODO account for confidence
             tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
         transp_table.append(tt_row)
