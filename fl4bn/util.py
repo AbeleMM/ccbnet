@@ -15,10 +15,11 @@ from decentralized.client import Client, combine
 from joblib import Memory
 from matplotlib.axes import Axes
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
+from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, mean_squared_error
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX = "Overlap"
@@ -110,29 +111,33 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
     return bayes_net
 
 
-def calc_accuracy(
-        test_df: pd.DataFrame, source: VariableElimination | Client,
-        e_vars: list[str], q_vars: list[str]) -> dict[str, float]:
-    accuracy = {v: 0 for v in q_vars}
+def get_inf_res(
+        source: VariableElimination | Client, samples: pd.DataFrame,
+        e_vars: list[str], q_vars: list[str]) -> list[list[float]]:
+    res: list[list[float]] = []
 
-    for _, row in test_df.iterrows():
+    for _, row in samples.iterrows():
+        res_row: list[float] = []
         evid = {v: row[v] for v in e_vars}
+
         if isinstance(source, VariableElimination):
             query = cast(
-                dict[str, str],
-                source.map_query(
+                DiscreteFactor,
+                source.query(
                     variables=q_vars,
                     evidence=evid,
                     show_progress=False
                 )
             )
         else:
-            query = source.map_elimination_ask(set(q_vars), evid)
-        for variable, value in query.items():
-            accuracy[variable] += row[variable] == value
+            query = source.elimination_ask(set(q_vars), evid)
 
-    accuracy = {k: round(v / len(test_df) * 100, 3) for (k, v) in accuracy.items()}
-    return accuracy
+        for assignment in sorted(query.assignment(range(len(query.scope())))):
+            res_row.append(cast(float, query.get_value(**dict(assignment))))
+
+        res.append(res_row)
+
+    return res
 
 
 def benchmark_single(
@@ -143,17 +148,10 @@ def benchmark_single(
         query_vars: list[str],
         learnt_model: BayesianNetwork | None = None,
         decentralized=False) -> pd.DataFrame:
-    ref_accuracy = calc_accuracy(
-        test_samples,
-        VariableElimination(ref_model),
-        evidence_vars,
-        query_vars
-    )
     res_single: list[dict[str, float | str]] = []
+    name_to_bn: dict[str, VariableElimination | Client] = {}
+    ref_inf = get_inf_res(VariableElimination(ref_model), test_samples, evidence_vars, query_vars)
 
-    name_to_bn: dict[str, VariableElimination | Client] = {
-        "Reference": VariableElimination(ref_model)
-    }
     if learnt_model:
         name_to_bn["Learnt"] = VariableElimination(learnt_model)
 
@@ -162,15 +160,14 @@ def benchmark_single(
         name_to_bn[method.value] = VariableElimination(combine_bns(trained_models, method))
 
     if decentralized:
-        name_to_bn.pop(CombineMethod.SINGLE.value, None)
         name_to_bn["Decentralized"] = combine(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        acc_abs = sum(calc_accuracy(test_samples, model, evidence_vars, query_vars).values())
-        acc_abs /= len(ref_accuracy)
+        inf = get_inf_res(model, test_samples, evidence_vars, query_vars)
+        rmse = mean_squared_error(ref_inf, inf, squared=False)
 
-        row["Average Absolute Accuracy (%)"] = round(acc_abs, 3)
+        row["RMSE"] = round(cast(float, rmse), 3)
 
         if not decentralized:
             row["Structure F1"] = round(sf1_score(ref_model, model), 3)
