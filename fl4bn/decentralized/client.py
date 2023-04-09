@@ -1,6 +1,6 @@
 import itertools
 from collections import defaultdict
-from typing import Collection, cast
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -133,7 +133,7 @@ class Client:
         del self.node_to_neighbors[node]
 
     def elimination_ask(
-            self, query: set[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
+            self, query: list[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
         no_merge_vars: set[str] = set()
         if propagate:
             factors = [client.elimination_ask(query, evidence, False) for client in self.clients]
@@ -150,29 +150,26 @@ class Client:
                 )
                 for cpd in cast(list[TabularCPD], self.combined_bn.get_cpds())
             ]
-            # vars_with_cpd: set[str] = {
-            #     cpd.variable for cpd in cast(list[TabularCPD], self.combined_bn.get_cpds())
-            # }
             no_merge_vars = set(self.combined_bn.nodes)
 
         node_to_factors: dict[str, set[DiscreteFactor]] = defaultdict(set)
+        query_set = set(query)
 
         for factor in factors:
             for variable in cast(list[str], factor.variables):
                 node_to_factors[variable].add(factor)
 
         for var in node_to_factors:
-            if var in evidence or var in query:
+            if var in evidence or var in query_set:
                 continue
 
             relevant_factors = node_to_factors[var].copy()
 
             factors = [factor for factor in factors if factor not in relevant_factors]
 
-            relevant_factors_iter = iter(relevant_factors)
-            product_relevant_factors = next(relevant_factors_iter).copy()
+            product_relevant_factors = DiscreteFactor([], [], [1])
 
-            for relevant_factor in relevant_factors_iter:
+            for relevant_factor in relevant_factors:
                 product_relevant_factors.product(relevant_factor, inplace=True)
 
             if var not in no_merge_vars:
@@ -186,12 +183,9 @@ class Client:
 
             factors.append(product_relevant_factors)
 
-        if not factors:
-            return DiscreteFactor([], [], [1])
+        product_factors = DiscreteFactor([], [], [1])
 
-        product_factors = factors[0].copy()
-
-        for factor in factors[1:]:
+        for factor in factors:
             product_factors.product(factor, inplace=True)
 
         product_factors.normalize(inplace=True)
@@ -199,15 +193,16 @@ class Client:
         return product_factors
 
     def disjoint_elimination_ask(
-            self, query: set[str], evidence: dict[str, str]) -> dict[str, DiscreteFactor]:
+            self, query: list[str], evidence: dict[str, str]) -> dict[str, DiscreteFactor]:
         factor = self.elimination_ask(query, evidence)
 
         return {
-            var: cast(DiscreteFactor, factor.marginalize(query - {var}, inplace=False))
+            var: cast(
+                DiscreteFactor, factor.marginalize([q for q in query if q != var], inplace=False))
             for var in query
         }
 
-    def map_elimination_ask(self, query: set[str], evidence: dict[str, str]) -> dict[str, str]:
+    def map_elimination_ask(self, query: list[str], evidence: dict[str, str]) -> dict[str, str]:
         factor = self.elimination_ask(query, evidence)
         argmax = np.argmax(factor.values)
         assignment, *_ = cast(list[list[tuple[str, str]]], factor.assignment([argmax]))

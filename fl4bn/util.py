@@ -112,45 +112,66 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
 
 def get_inf_res(
-        source: VariableElimination | Client, samples: pd.DataFrame,
-        e_vars: list[str], q_vars: list[str]) -> list[list[float]]:
-    res: list[list[float]] = []
+        source: VariableElimination | Client,
+        samples: list[dict[str, str]],
+        q_vars: list[str]) -> list[dict[str, DiscreteFactor]]:
+    facts: list[dict[str, DiscreteFactor]] = []
 
-    for _, row in samples.iterrows():
-        res_row: list[float] = []
-        evid = {v: row[v] for v in e_vars}
-
+    for row in samples:
         if isinstance(source, VariableElimination):
             query = cast(
-                DiscreteFactor,
+                dict[str, DiscreteFactor],
                 source.query(
                     variables=q_vars,
-                    evidence=evid,
+                    evidence=row,
+                    joint=False,
                     show_progress=False
                 )
             )
         else:
-            query = source.elimination_ask(set(q_vars), evid)
+            query = source.disjoint_elimination_ask(q_vars, row)
 
-        for assignment in sorted(query.assignment(range(len(query.scope())))):
-            res_row.append(cast(float, query.get_value(**dict(assignment))))
+        facts.append(query)
 
-        res.append(res_row)
+    return facts
 
-    return res
+
+def calc_rmse(
+        ref_fact_dicts: list[dict[str, DiscreteFactor]],
+        pred_fact_dicts: list[dict[str, DiscreteFactor]]) -> float:
+    ref_values: list[list[float]] = []
+    pred_values: list[list[float]] = []
+
+    for i, ref_fact_dict in enumerate(ref_fact_dicts):
+        ref_row: list[float] = []
+        pred_row: list[float] = []
+
+        for node, ref_fact in ref_fact_dict.items():
+            for state in ref_fact.state_names[node]:
+                node_state = {node: state}
+                ref_row.append(cast(float, ref_fact.get_value(**node_state)))
+                try:
+                    pred_val = cast(float, pred_fact_dicts[i][node].get_value(**node_state))
+                except ValueError:
+                    pred_val = 0.0
+                pred_row.append(pred_val)
+
+        ref_values.append(ref_row)
+        pred_values.append(pred_row)
+
+    return cast(float, mean_squared_error(ref_values, pred_values, squared=False))
 
 
 def benchmark_single(
         ref_model: BayesianNetwork,
         trained_models: list[BayesianNetwork],
-        test_samples: pd.DataFrame,
-        evidence_vars: list[str],
+        test_samples: list[dict[str, str]],
         query_vars: list[str],
         learnt_model: BayesianNetwork | None = None,
         decentralized=False) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
     name_to_bn: dict[str, VariableElimination | Client] = {}
-    ref_inf = get_inf_res(VariableElimination(ref_model), test_samples, evidence_vars, query_vars)
+    ref_facts = get_inf_res(VariableElimination(ref_model), test_samples, query_vars)
 
     if learnt_model:
         name_to_bn["Learnt"] = VariableElimination(learnt_model)
@@ -164,10 +185,10 @@ def benchmark_single(
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        inf = get_inf_res(model, test_samples, evidence_vars, query_vars)
-        rmse = mean_squared_error(ref_inf, inf, squared=False)
+        pred_facts = get_inf_res(model, test_samples, query_vars)
 
-        row["RMSE"] = round(cast(float, rmse), 3)
+        row["RMSE"] = round(
+            calc_rmse(ref_facts, pred_facts), 3)
 
         if not decentralized:
             row["Structure F1"] = round(sf1_score(ref_model, model), 3)
@@ -204,7 +225,6 @@ def benchmark_multi(
             )
             for _ in range(nr_clients)
         ]
-        test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
         (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
         if in_out_inf_vars:
@@ -215,6 +235,13 @@ def benchmark_multi(
             rand.shuffle(shuffled_nodes)
             mid_ind = len(shuffled_nodes) // 2
             evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
+
+        test_samples = cast(
+            list[dict[str, str]],
+            sampling.forward_sample(
+                size=test_counts, seed=r_seed, show_progress=False)[evidence_vars].to_dict(
+                    orient="records")
+        )
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
@@ -231,7 +258,7 @@ def benchmark_multi(
             ]
 
             res_single = benchmark_single(
-                ref_model, trained_models, test_samples, evidence_vars, query_vars,
+                ref_model, trained_models, test_samples, query_vars,
                 learnt_model, decentralized
             )
             res_single[_BENCHMARK_INDEX] = round(overlap, 1)

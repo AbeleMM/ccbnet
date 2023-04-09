@@ -1,3 +1,4 @@
+import itertools
 from collections import defaultdict
 from typing import Collection, cast
 
@@ -8,7 +9,7 @@ from pgmpy.models import BayesianNetwork
 
 def elimination_ask(
         source: BayesianNetwork | list[BayesianNetwork],
-        query: set[str],
+        query: list[str],
         evidence: dict[str, str],
         marg=True) -> DiscreteFactor:
     if isinstance(source, list):
@@ -46,23 +47,23 @@ def elimination_ask(
                         no_merge_vars.add(inc)
 
     node_to_factors: dict[str, set[DiscreteFactor]] = defaultdict(set)
+    query_set = set(query)
 
     for factor in factors:
         for variable in cast(list[str], factor.variables):
             node_to_factors[variable].add(factor)
 
     for var in node_to_factors:
-        if var in evidence or var in query:
+        if var in evidence or var in query_set:
             continue
 
         relevant_factors = node_to_factors[var].copy()
 
         factors = [factor for factor in factors if factor not in relevant_factors]
 
-        relevant_factors_iter = iter(relevant_factors)
-        product_relevant_factors = next(relevant_factors_iter).copy()
+        product_relevant_factors = DiscreteFactor([], [], [1])
 
-        for relevant_factor in relevant_factors_iter:
+        for relevant_factor in relevant_factors:
             product_relevant_factors.product(relevant_factor, inplace=True)
 
         if var not in no_merge_vars:
@@ -76,9 +77,11 @@ def elimination_ask(
 
         factors.append(product_relevant_factors)
 
-    product_factors = factors[0].copy()
-    for factor in factors[1:]:
+    product_factors = DiscreteFactor([], [], [1])
+
+    for factor in factors:
         product_factors.product(factor, inplace=True)
+
     product_factors.normalize(inplace=True)
 
     return product_factors
@@ -86,18 +89,19 @@ def elimination_ask(
 
 def disjoint_elimination_ask(
         source: BayesianNetwork | list[BayesianNetwork],
-        query: set[str],
+        query: list[str],
         evidence: dict[str, str]) -> dict[str, DiscreteFactor]:
     factor = elimination_ask(source, query, evidence)
     return {
-        var: cast(DiscreteFactor, factor.marginalize(query - {var}, inplace=False))
+        var: cast(
+            DiscreteFactor, factor.marginalize([q for q in query if q != var], inplace=False))
         for var in query
     }
 
 
 def map_elimination_ask(
         source: BayesianNetwork | list[BayesianNetwork],
-        query: set[str],
+        query: list[str],
         evidence: dict[str, str]) -> dict[str, str]:
     factor = elimination_ask(source, query, evidence)
     argmax = np.argmax(factor.values)
