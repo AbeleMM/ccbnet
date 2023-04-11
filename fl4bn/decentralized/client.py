@@ -16,6 +16,7 @@ class Client:
         self.combined_bn.add_nodes_from(self.local_bn.nodes)
         self.clients: list[Client] = []
         self.node_to_neighbors: dict[str, list[Client]] = {}
+        self.ov_nodes: set[str] = set()
 
     def add_clients(self, clients: list['Client']) -> None:
         self.clients = sorted(
@@ -44,6 +45,7 @@ class Client:
             node: sorted(neighbors, key=lambda x: x.identifier)
             for node, neighbors in node_to_neighbors_set.items()
         }
+        self.ov_nodes = set(node_to_neighbors_set)
 
         for node in self.local_bn.nodes():
             if node not in self.node_to_neighbors:
@@ -150,7 +152,7 @@ class Client:
                 )
                 for cpd in cast(list[TabularCPD], self.combined_bn.get_cpds())
             ]
-            no_merge_vars = set(self.combined_bn.nodes)
+            no_merge_vars = set(self.ov_nodes)
 
         node_to_factors: dict[str, set[DiscreteFactor]] = defaultdict(set)
         query_set = set(query)
