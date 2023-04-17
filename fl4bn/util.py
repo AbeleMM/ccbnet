@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 from math import ceil
 from pathlib import Path
 from random import Random
+from time import perf_counter_ns
 from typing import Collection, cast
 
+import inference
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -16,14 +18,13 @@ from joblib import Memory
 from matplotlib.axes import Axes
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
-from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 from sklearn.metrics import f1_score, mean_squared_error
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
-_BENCHMARK_INDEX = "Overlap"
-BENCHMARK_PIVOT_COL = "Name"
+_BENCHMARK_INDEX: str = "Overlap"
+BENCHMARK_PIVOT_COL: str = "Name"
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -112,28 +113,33 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
 
 def get_inf_res(
-        source: VariableElimination | Client,
+        source: BayesianNetwork | Client,
         samples: list[dict[str, str]],
-        q_vars: list[str]) -> list[dict[str, DiscreteFactor]]:
+        q_vars: list[str]) -> tuple[list[dict[str, DiscreteFactor]], float]:
     facts: list[dict[str, DiscreteFactor]] = []
+    total_time = 0.0
 
     for row in samples:
-        if isinstance(source, VariableElimination):
-            query = cast(
-                dict[str, DiscreteFactor],
-                source.query(
-                    variables=q_vars,
-                    evidence=row,
-                    joint=False,
-                    show_progress=False
-                )
-            )
+        if isinstance(source, BayesianNetwork):
+            start = perf_counter_ns()
+            # query = cast(
+            #     dict[str, DiscreteFactor],
+            #     source.query(
+            #         variables=q_vars,
+            #         evidence=row,
+            #         joint=False,
+            #         show_progress=False
+            #     )
+            # )
+            query = inference.disjoint_elimination_ask(source, q_vars, row)
         else:
+            start = perf_counter_ns()
             query = source.disjoint_elimination_ask(q_vars, row)
 
+        total_time += perf_counter_ns() - start
         facts.append(query)
 
-    return facts
+    return facts, total_time
 
 
 def calc_rmse(
@@ -170,32 +176,36 @@ def benchmark_single(
         learnt_model: BayesianNetwork | None = None,
         decentralized=False) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
-    name_to_bn: dict[str, VariableElimination | Client] = {}
-    ref_facts = get_inf_res(VariableElimination(ref_model), test_samples, query_vars)
+    name_to_bn: dict[str, BayesianNetwork | Client] = {}
+    ref_facts, total_ref_time = get_inf_res(ref_model, test_samples, query_vars)
 
     if learnt_model:
-        name_to_bn["Learnt"] = VariableElimination(learnt_model)
+        name_to_bn["Learnt"] = learnt_model
 
-    for method in CombineMethod:
-        # TODO switch to combine_bns_weighted (by amount of samples)
-        name_to_bn[method.value] = VariableElimination(combine_bns(trained_models, method))
+    # for method in CombineMethod:
+    #     # TODO switch to combine_bns_weighted (by amount of samples)
+    #     name_to_bn[method.value] = VariableElimination(combine_bns(trained_models, method))
+
+    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI)
+    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION)
 
     if decentralized:
         name_to_bn["Decentralized"] = combine(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        pred_facts = get_inf_res(model, test_samples, query_vars)
+        pred_facts, total_pred_time = get_inf_res(model, test_samples, query_vars)
 
-        row["RMSE"] = round(
-            calc_rmse(ref_facts, pred_facts), 3)
+        row["RMSE"] = round(calc_rmse(ref_facts, pred_facts), 3)
 
-        if not decentralized:
-            row["Structure F1"] = round(sf1_score(ref_model, model), 3)
+        row["RelTotTime"] = round(total_pred_time / total_ref_time, 3)
 
-            row["SHD"] = round(shd_score(ref_model, model), 3)
+        # if not decentralized:
+        #     row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 
-            row["Edge Count"] = len(model.edges())
+        #     row["SHD"] = round(shd_score(ref_model, model), 3)
+
+        #     row["EdgeCount"] = len(model.edges())
 
         res_single.append(row)
 

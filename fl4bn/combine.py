@@ -167,7 +167,9 @@ def _get_ext_node_values(
             )
             cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
             # TODO account for confidence
-            tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
+            # tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
+            tt_row = [v + cpd.values[i] for i, v in enumerate(tt_row)]
+        tt_row = [v / len(node_bns) for v in tt_row]
         transp_table.append(tt_row)
 
     return np.array(transp_table).T
