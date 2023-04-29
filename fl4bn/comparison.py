@@ -13,6 +13,11 @@ def plot_model_results(
     model = get_example_model(model_name)
     res = benchmark_multi(model, 4, 2000, 50000, True, in_out_inf_vars, True, 42)
 
+    if not exp_writer:
+        print('inout' if in_out_inf_vars else 'halves')
+        print(res)
+        return
+
     for metric in [col for col in res.columns if col != BENCHMARK_PIVOT_COL]:
         pivoted_res = res.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
         axes = cast(

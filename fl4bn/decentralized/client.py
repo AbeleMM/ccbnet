@@ -4,6 +4,7 @@ from typing import cast
 
 import numpy as np
 import numpy.typing as npt
+import tenseal as ts
 from pgmpy.factors.discrete.CPD import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -17,6 +18,7 @@ class Client:
         self.clients: list[Client] = []
         self.node_to_neighbors: dict[str, list[Client]] = {}
         self.ov_nodes: set[str] = set()
+        self.tmp_vals: npt.NDArray[np.float_] = np.array([])
 
     def add_clients(self, clients: list['Client']) -> None:
         self.clients = sorted(
@@ -56,44 +58,37 @@ class Client:
 
     def solve_overlaps(self) -> None:
         for node, neighbors in self.node_to_neighbors.items():
-            third_party = next(
-                (client for client in self.clients if client not in neighbors),
-                Client(-1, BayesianNetwork())
-            )
-            parents_union = third_party.get_parents_union(node, [self, *neighbors])
+            parents_union = self.get_parents_union(node, [self, *neighbors])
             self.add_parents(node, parents_union)
 
             for client in neighbors:
                 client.add_parents(node, parents_union)
 
-            cpd = third_party.get_combined_cpd(node, parents_union, [self, *neighbors])
-            self.combined_bn.add_cpds(cpd)
+            nr_parties = len(neighbors) + 1
+            node_to_states = self.get_node_to_states([node, *parents_union], [self, *neighbors])
+            context = ts.context(
+                ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
+                coeff_mod_bit_sizes=[60, 40, 40, 60])
+            context.generate_galois_keys()
+            context.global_scale = 2**40
+            enc_cols_clients = [
+                client.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+                for client in neighbors
+            ]
+            enc_cols_clients.append(
+                self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+            )
+            column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
+            self.set_combined_cpd(node, column_sums, parents_union, node_to_states)
 
             for client in neighbors:
+                client.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 client.mark_overlap_solved(node)
+
+        self.node_to_neighbors.clear()
 
     def get_parents_union(self, node: str, clients: list['Client']) -> list[str]:
         return sorted(set().union(*[client.local_bn.get_parents(node) for client in clients]))
-
-    def add_parents(self, node: str, parents: list[str]) -> None:
-        for parent in parents:
-            self.combined_bn.add_edge(parent, node)
-
-    def get_combined_cpd(
-            self, node: str, parents_union: list[str], clients: list['Client']) -> TabularCPD:
-        node_to_states = self.get_node_to_states([node, *parents_union], clients)
-        values = sum(
-            client.get_expanded_values(node, node_to_states) for client in clients
-        ) / len(clients)
-
-        return TabularCPD(
-            variable=node,
-            variable_card=len(node_to_states[node]),
-            values=values,
-            evidence=parents_union,
-            evidence_card=[len(node_to_states[p]) for p in parents_union],
-            state_names=node_to_states
-        )
 
     def get_node_to_states(
             self, nodes: list[str], clients: list['Client']) -> dict[str, list[str]]:
@@ -106,6 +101,44 @@ class Client:
                 node_to_val_dict[node].update(dict.fromkeys(client.local_bn.states[node], None))
 
         return {node: list(values_dict.keys()) for node, values_dict in node_to_val_dict.items()}
+
+    def add_parents(self, node: str, parents: list[str]) -> None:
+        for parent in parents:
+            self.combined_bn.add_edge(parent, node)
+
+    def set_vals_ret_enc(
+            self, node: str, nr_parties: int,
+            node_to_states: dict[str, list[str]], context: ts.Context) -> list[ts.CKKSVector]:
+        values = self.get_expanded_values(node, node_to_states) ** (1 / nr_parties)
+        self.tmp_vals = values.transpose()
+        return [ts.ckks_vector(context, col) for col in self.tmp_vals]
+
+    def calc_col_ips(
+            self, enc_cols_clients: list[list[ts.CKKSVector]],
+            nr_parties: int) -> list[float]:
+        col_ips: list[float] = []
+
+        for col_ind in range(len(enc_cols_clients[0])):
+            res = enc_cols_clients[0][col_ind]
+            for client in enc_cols_clients[1:]:
+                res *= client[col_ind]
+            col_ips.append(res.sum().decrypt()[0] ** (1 / nr_parties))
+
+        return col_ips
+
+    def set_combined_cpd(
+            self, node: str, column_sums: list[float],
+            parents_union: list[str], node_to_states: dict[str, list[str]]) -> None:
+        values = np.array([v / column_sums[i] for i, v in enumerate(self.tmp_vals)]).transpose()
+        cpd = TabularCPD(
+            variable=node,
+            variable_card=len(node_to_states[node]),
+            values=values,
+            evidence=parents_union,
+            evidence_card=[len(node_to_states[p]) for p in parents_union],
+            state_names=node_to_states
+        )
+        self.combined_bn.add_cpds(cpd)
 
     def get_expanded_values(
             self, node: str, node_to_states: dict[str, list[str]]) -> npt.NDArray[np.float_]:
@@ -140,7 +173,9 @@ class Client:
         if propagate:
             factors = [client.elimination_ask(query, evidence, False) for client in self.clients]
             factors.append(self.elimination_ask(query, evidence, False))
+            nodes = sorted(set(var for factor in factors for var in factor.variables))
         else:
+            cpds = cast(list[TabularCPD], self.combined_bn.get_cpds())
             factors = [
                 cast(
                     DiscreteFactor,
@@ -150,19 +185,19 @@ class Client:
                         show_warnings=False
                     )
                 )
-                for cpd in cast(list[TabularCPD], self.combined_bn.get_cpds())
+                for cpd in cpds
             ]
+            nodes = sorted(set(cpd.variable for cpd in cpds))
             no_merge_vars = set(self.ov_nodes)
 
-        node_to_factors: dict[str, set[DiscreteFactor]] = defaultdict(set)
-        query_set = set(query)
+        node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
 
         for factor in factors:
             for variable in cast(list[str], factor.variables):
-                node_to_factors[variable].add(factor)
+                node_to_factors[variable].append(factor)
 
-        for var in node_to_factors:
-            if var in evidence or var in query_set:
+        for var in nodes:
+            if var in evidence or var in query:
                 continue
 
             relevant_factors = node_to_factors[var].copy()
@@ -178,10 +213,12 @@ class Client:
                 product_relevant_factors.marginalize([var], inplace=True)
 
             for node_factors in node_to_factors.values():
-                node_factors -= relevant_factors
+                for rel_fact in relevant_factors:
+                    if rel_fact in node_factors:
+                        node_factors.remove(rel_fact)
 
             for prf_var in cast(list[str], product_relevant_factors.variables):
-                node_to_factors[prf_var].add(product_relevant_factors)
+                node_to_factors[prf_var].append(product_relevant_factors)
 
             factors.append(product_relevant_factors)
 

@@ -154,7 +154,8 @@ def _get_ext_node_values(
     transp_table: list[list[float]] = []
 
     for parent_inst in itertools.product(*[node_to_vals[parent] for parent in parents_union]):
-        tt_row: list[float] = [0] * nr_node_vals
+        # tt_row: list[float] = [0] * nr_node_vals
+        tt_row: list[float] = [1] * nr_node_vals
         for bayes_net in node_bns:
             cpd: TabularCPD = cast(TabularCPD, bayes_net.get_cpds(node)).copy()
             cpd.reduce(
@@ -168,8 +169,10 @@ def _get_ext_node_values(
             cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
             # TODO account for confidence
             # tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
-            tt_row = [v + cpd.values[i] for i, v in enumerate(tt_row)]
-        tt_row = [v / len(node_bns) for v in tt_row]
+            # tt_row = [v + cpd.values[i] for i, v in enumerate(tt_row)]
+            tt_row = [v * cpd.values[i] for i, v in enumerate(tt_row)]
+        # tt_row = [v / len(node_bns) for v in tt_row]
+        tt_row = [v ** (1 / len(node_bns)) for v in tt_row]
         transp_table.append(tt_row)
 
     return np.array(transp_table).T

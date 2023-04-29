@@ -46,15 +46,14 @@ def elimination_ask(
                     if source.in_degree(inc) and source.out_degree(inc):
                         no_merge_vars.add(inc)
 
-    node_to_factors: dict[str, set[DiscreteFactor]] = defaultdict(set)
-    query_set = set(query)
+    node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
 
     for factor in factors:
         for variable in cast(list[str], factor.variables):
-            node_to_factors[variable].add(factor)
+            node_to_factors[variable].append(factor)
 
     for var in node_to_factors:
-        if var in evidence or var in query_set:
+        if var in evidence or var in query:
             continue
 
         relevant_factors = node_to_factors[var].copy()
@@ -70,10 +69,12 @@ def elimination_ask(
             product_relevant_factors.marginalize([var], inplace=True)
 
         for node_factors in node_to_factors.values():
-            node_factors -= relevant_factors
+            for relevant_fact in relevant_factors:
+                if relevant_fact in node_factors:
+                    node_factors.remove(relevant_fact)
 
         for prf_var in cast(list[str], product_relevant_factors.variables):
-            node_to_factors[prf_var].add(product_relevant_factors)
+            node_to_factors[prf_var].append(product_relevant_factors)
 
         factors.append(product_relevant_factors)
 
