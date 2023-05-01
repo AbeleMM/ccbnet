@@ -4,10 +4,14 @@ from typing import cast
 
 import numpy as np
 import numpy.typing as npt
+import private_set_intersection.python as psi
 import tenseal as ts
 from pgmpy.factors.discrete.CPD import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
+REVEAL_INTERSECTION = True
+FPR = 0.0
+DS = psi.DataStructure.RAW
 
 class Client:
     def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
@@ -16,8 +20,8 @@ class Client:
         self.combined_bn = BayesianNetwork()
         self.combined_bn.add_nodes_from(self.local_bn.nodes)
         self.clients: list[Client] = []
-        self.node_to_neighbors: dict[str, list[Client]] = {}
-        self.ov_nodes: set[str] = set()
+        self.node_to_neighbors: dict[str, list[Client]] = defaultdict(list)
+        self.solved_overlaps: set[str] = set()
         self.tmp_vals: npt.NDArray[np.float_] = np.array([])
 
     def add_clients(self, clients: list['Client']) -> None:
@@ -36,28 +40,54 @@ class Client:
             client.solve_overlaps()
 
     def find_overlaps(self) -> None:
-        node_to_neighbors_set: defaultdict[str, set[Client]] = defaultdict(set)
-
+        own_nodes_list = list(self.local_bn.nodes)
         for client in self.clients:
-            intersect = set(self.local_bn.nodes).intersection(client.local_bn.nodes)
-            for node in intersect:
-                node_to_neighbors_set[node].add(client)
+            if client.identifier < self.identifier:
+                continue
+
+            client_nodes_list = list(client.local_bn.nodes)
+            cl = psi.client.CreateWithNewKey(REVEAL_INTERSECTION)
+            sv = psi.server.CreateWithNewKey(REVEAL_INTERSECTION)
+            setup = psi.ServerSetup()
+            setup.ParseFromString(
+                sv.CreateSetupMessage(
+                    FPR, len(client_nodes_list), own_nodes_list, DS
+                ).SerializeToString()
+            )
+            request = psi.Request()
+            request.ParseFromString(
+                cl.CreateRequest(client_nodes_list).SerializeToString()
+            )
+            response = psi.Response()
+            response.ParseFromString(sv.ProcessRequest(request).SerializeToString())
+            intersect: list[str] = [
+                client_nodes_list[i] for i in cl.GetIntersection(setup, response)
+            ]
+            self.update_overlaps(client, intersect)
+            client.update_overlaps(self, intersect)
 
         self.node_to_neighbors = {
-            node: sorted(neighbors, key=lambda x: x.identifier)
-            for node, neighbors in node_to_neighbors_set.items()
+            node: sorted(set(neighbors), key=lambda x: x.identifier)
+            for node, neighbors in self.node_to_neighbors.items()
         }
-        self.ov_nodes = set(node_to_neighbors_set)
 
-        for node in self.local_bn.nodes():
+        for node in self.local_bn.nodes:
             if node not in self.node_to_neighbors:
                 cpd = cast(TabularCPD, self.local_bn.get_cpds(node)).copy()
                 for parent in cast(list[str], self.local_bn.get_parents(node)):
                     self.combined_bn.add_edge(parent, node)
                 self.combined_bn.add_cpds(cpd)
 
+    def update_overlaps(self, client: 'Client', intersect: list[str]) -> None:
+        for node in intersect:
+            self.node_to_neighbors[node].append(client)
+
     def solve_overlaps(self) -> None:
-        for node, neighbors in self.node_to_neighbors.items():
+        for node in self.node_to_neighbors:
+            if node in self.solved_overlaps:
+                continue
+
+            neighbors = self.node_to_neighbors[node]
             parents_union = self.get_parents_union(node, [self, *neighbors])
             self.add_parents(node, parents_union)
 
@@ -71,21 +101,18 @@ class Client:
                 coeff_mod_bit_sizes=[60, 40, 40, 60])
             context.generate_galois_keys()
             context.global_scale = 2**40
+            self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
             enc_cols_clients = [
                 client.set_vals_ret_enc(node, nr_parties, node_to_states, context)
                 for client in neighbors
             ]
-            enc_cols_clients.append(
-                self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
-            )
             column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
             self.set_combined_cpd(node, column_sums, parents_union, node_to_states)
+            self.mark_overlap_solved(node)
 
             for client in neighbors:
                 client.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 client.mark_overlap_solved(node)
-
-        self.node_to_neighbors.clear()
 
     def get_parents_union(self, node: str, clients: list['Client']) -> list[str]:
         return sorted(set().union(*[client.local_bn.get_parents(node) for client in clients]))
@@ -118,11 +145,12 @@ class Client:
             nr_parties: int) -> list[float]:
         col_ips: list[float] = []
 
-        for col_ind in range(len(enc_cols_clients[0])):
-            res = enc_cols_clients[0][col_ind]
-            for client in enc_cols_clients[1:]:
+        for col_ind, own_col in enumerate(self.tmp_vals):
+            res = own_col.tolist()
+            for client in enc_cols_clients:
                 res *= client[col_ind]
-            col_ips.append(res.sum().decrypt()[0] ** (1 / nr_parties))
+            res_dec, *_ = cast(list[float], res.sum().decrypt())
+            col_ips.append(res_dec ** (1 / nr_parties))
 
         return col_ips
 
@@ -164,8 +192,8 @@ class Client:
 
         return np.array(values)
 
-    def mark_overlap_solved(self, node) -> None:
-        del self.node_to_neighbors[node]
+    def mark_overlap_solved(self, node: str) -> None:
+        self.solved_overlaps.add(node)
 
     def elimination_ask(
             self, query: list[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
@@ -188,7 +216,7 @@ class Client:
                 for cpd in cpds
             ]
             nodes = sorted(set(cpd.variable for cpd in cpds))
-            no_merge_vars = set(self.ov_nodes)
+            no_merge_vars = set(self.node_to_neighbors)
 
         node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
 

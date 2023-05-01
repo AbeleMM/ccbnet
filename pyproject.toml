@@ -15,6 +15,7 @@ networkx = "^3.0.0"
 torch = "^1.13.1"
 rpyc = "^5.3.1"
 tenseal = "^0.3.14"
+openmined-psi = "^2.0.1"
 
 [tool.poetry.group.dev.dependencies]
 jupyterlab = "^3.6.1"
