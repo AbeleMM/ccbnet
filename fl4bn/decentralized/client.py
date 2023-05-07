@@ -13,12 +13,15 @@ REVEAL_INTERSECTION = True
 FPR = 0.0
 DS = psi.DataStructure.RAW
 
+
 class Client:
     def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
         self.identifier = identifier
         self.local_bn = local_bn
-        self.combined_bn = BayesianNetwork()
-        self.combined_bn.add_nodes_from(self.local_bn.nodes)
+        self.cpd_nodes: list[str] = sorted(local_bn.nodes)
+        self.node_to_cpd: dict[str, TabularCPD] = {
+            cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
+        }
         self.clients: list[Client] = []
         self.node_to_neighbors: dict[str, list[Client]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
@@ -46,22 +49,22 @@ class Client:
                 continue
 
             client_nodes_list = list(client.local_bn.nodes)
-            cl = psi.client.CreateWithNewKey(REVEAL_INTERSECTION)
-            sv = psi.server.CreateWithNewKey(REVEAL_INTERSECTION)
+            psi_c = psi.client.CreateWithNewKey(REVEAL_INTERSECTION)
+            psi_s = psi.server.CreateWithNewKey(REVEAL_INTERSECTION)
             setup = psi.ServerSetup()
             setup.ParseFromString(
-                sv.CreateSetupMessage(
+                psi_s.CreateSetupMessage(
                     FPR, len(client_nodes_list), own_nodes_list, DS
                 ).SerializeToString()
             )
             request = psi.Request()
             request.ParseFromString(
-                cl.CreateRequest(client_nodes_list).SerializeToString()
+                psi_c.CreateRequest(client_nodes_list).SerializeToString()
             )
             response = psi.Response()
-            response.ParseFromString(sv.ProcessRequest(request).SerializeToString())
+            response.ParseFromString(psi_s.ProcessRequest(request).SerializeToString())
             intersect: list[str] = [
-                client_nodes_list[i] for i in cl.GetIntersection(setup, response)
+                client_nodes_list[i] for i in psi_c.GetIntersection(setup, response)
             ]
             self.update_overlaps(client, intersect)
             client.update_overlaps(self, intersect)
@@ -70,13 +73,6 @@ class Client:
             node: sorted(set(neighbors), key=lambda x: x.identifier)
             for node, neighbors in self.node_to_neighbors.items()
         }
-
-        for node in self.local_bn.nodes:
-            if node not in self.node_to_neighbors:
-                cpd = cast(TabularCPD, self.local_bn.get_cpds(node)).copy()
-                for parent in cast(list[str], self.local_bn.get_parents(node)):
-                    self.combined_bn.add_edge(parent, node)
-                self.combined_bn.add_cpds(cpd)
 
     def update_overlaps(self, client: 'Client', intersect: list[str]) -> None:
         for node in intersect:
@@ -88,14 +84,10 @@ class Client:
                 continue
 
             neighbors = self.node_to_neighbors[node]
-            parents_union = self.get_parents_union(node, [self, *neighbors])
-            self.add_parents(node, parents_union)
-
-            for client in neighbors:
-                client.add_parents(node, parents_union)
-
+            overlap_clients: list[Client] = [self, *neighbors]
+            parents_union = self.get_parents_union(node, overlap_clients)
             nr_parties = len(neighbors) + 1
-            node_to_states = self.get_node_to_states([node, *parents_union], [self, *neighbors])
+            node_to_states = self.get_node_to_states([node, *parents_union], overlap_clients)
             context = ts.context(
                 ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
                 coeff_mod_bit_sizes=[60, 40, 40, 60])
@@ -107,10 +99,7 @@ class Client:
                 for client in neighbors
             ]
             column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
-            self.set_combined_cpd(node, column_sums, parents_union, node_to_states)
-            self.mark_overlap_solved(node)
-
-            for client in neighbors:
+            for client in overlap_clients:
                 client.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 client.mark_overlap_solved(node)
 
@@ -128,10 +117,6 @@ class Client:
                 node_to_val_dict[node].update(dict.fromkeys(client.local_bn.states[node], None))
 
         return {node: list(values_dict.keys()) for node, values_dict in node_to_val_dict.items()}
-
-    def add_parents(self, node: str, parents: list[str]) -> None:
-        for parent in parents:
-            self.combined_bn.add_edge(parent, node)
 
     def set_vals_ret_enc(
             self, node: str, nr_parties: int,
@@ -166,7 +151,7 @@ class Client:
             evidence_card=[len(node_to_states[p]) for p in parents_union],
             state_names=node_to_states
         )
-        self.combined_bn.add_cpds(cpd)
+        self.node_to_cpd[cpd.variable] = cpd
 
     def get_expanded_values(
             self, node: str, node_to_states: dict[str, list[str]]) -> npt.NDArray[np.float_]:
@@ -203,7 +188,6 @@ class Client:
             factors.append(self.elimination_ask(query, evidence, False))
             nodes = sorted(set(var for factor in factors for var in factor.variables))
         else:
-            cpds = cast(list[TabularCPD], self.combined_bn.get_cpds())
             factors = [
                 cast(
                     DiscreteFactor,
@@ -213,9 +197,9 @@ class Client:
                         show_warnings=False
                     )
                 )
-                for cpd in cpds
+                for cpd in self.node_to_cpd.values()
             ]
-            nodes = sorted(set(cpd.variable for cpd in cpds))
+            nodes = self.cpd_nodes
             no_merge_vars = set(self.node_to_neighbors)
 
         node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
