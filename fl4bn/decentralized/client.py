@@ -12,6 +12,8 @@ from pgmpy.models import BayesianNetwork
 REVEAL_INTERSECTION = True
 FPR = 0.0
 DS = psi.DataStructure.RAW
+PMD_TO_MAX_CM_BITS = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
+HE_DEC_BITS = 40
 
 
 class Client:
@@ -86,16 +88,12 @@ class Client:
             neighbors = self.node_to_neighbors[node]
             overlap_clients: list[Client] = [self, *neighbors]
             parents_union = self.get_parents_union(node, overlap_clients)
-            nr_parties = len(neighbors) + 1
+            nr_parties = len(overlap_clients)
             node_to_states = self.get_node_to_states([node, *parents_union], overlap_clients)
-            context = ts.context(
-                ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
-                coeff_mod_bit_sizes=[60, 40, 40, 60])
-            context.generate_galois_keys()
-            context.global_scale = 2**40
-            self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+            context = self.gen_context(nr_parties, len(node_to_states[node]))
+            self.set_vals_ret_enc(node, nr_parties, node_to_states, context, True)
             enc_cols_clients = [
-                client.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+                client.set_vals_ret_enc(node, nr_parties, node_to_states, context, True)
                 for client in neighbors
             ]
             column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
@@ -118,15 +116,33 @@ class Client:
 
         return {node: list(values_dict.keys()) for node, values_dict in node_to_val_dict.items()}
 
+    def gen_context(self, nr_parties: int, nr_states: int) -> ts.Context:
+        aux = nr_states.bit_length()  # prec before dec point & inner/outer bits diff
+        inner_bits = HE_DEC_BITS + aux
+        outer_bits = inner_bits + aux
+        cmb_sizes = [outer_bits, *([inner_bits] * nr_parties), outer_bits]
+        cm_bits = sum(cmb_sizes)
+        pm_degree = 0
+        for pmd, max_cm_bits in PMD_TO_MAX_CM_BITS.items():
+            if cm_bits < max_cm_bits:
+                pm_degree = pmd
+                break
+        context = ts.context(ts.SCHEME_TYPE.CKKS,
+                             poly_modulus_degree=pm_degree, coeff_mod_bit_sizes=cmb_sizes)
+        context.generate_galois_keys()
+        context.global_scale = 2**inner_bits
+        return context
+
     def set_vals_ret_enc(
             self, node: str, nr_parties: int,
-            node_to_states: dict[str, list[str]], context: ts.Context) -> list[ts.CKKSVector]:
+            node_to_states: dict[str, list[str]],
+            context: ts.Context, enc=True) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
         values = self.get_expanded_values(node, node_to_states) ** (1 / nr_parties)
         self.tmp_vals = values.transpose()
-        return [ts.ckks_vector(context, col) for col in self.tmp_vals]
+        return [ts.ckks_vector(context, col) if enc else col for col in self.tmp_vals]
 
     def calc_col_ips(
-            self, enc_cols_clients: list[list[ts.CKKSVector]],
+            self, enc_cols_clients: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],
             nr_parties: int) -> list[float]:
         col_ips: list[float] = []
 
@@ -134,7 +150,10 @@ class Client:
             res = own_col.tolist()
             for client in enc_cols_clients:
                 res *= client[col_ind]
-            res_dec, *_ = cast(list[float], res.sum().decrypt())
+            if isinstance(res, ts.CKKSVector):
+                res_dec, *_ = cast(list[float], res.sum().decrypt())
+            else:
+                res_dec = res.sum()
             col_ips.append(res_dec ** (1 / nr_parties))
 
         return col_ips
@@ -182,7 +201,7 @@ class Client:
 
     def elimination_ask(
             self, query: list[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
-        no_merge_vars: set[str] = set()
+        no_marg_vars: set[str] = set()
         if propagate:
             factors = [client.elimination_ask(query, evidence, False) for client in self.clients]
             factors.append(self.elimination_ask(query, evidence, False))
@@ -200,7 +219,7 @@ class Client:
                 for cpd in self.node_to_cpd.values()
             ]
             nodes = self.cpd_nodes
-            no_merge_vars = set(self.node_to_neighbors)
+            no_marg_vars = set(self.node_to_neighbors)
 
         node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
 
@@ -221,7 +240,7 @@ class Client:
             for relevant_factor in relevant_factors:
                 product_relevant_factors.product(relevant_factor, inplace=True)
 
-            if var not in no_merge_vars:
+            if var not in no_marg_vars:
                 product_relevant_factors.marginalize([var], inplace=True)
 
             for node_factors in node_to_factors.values():
