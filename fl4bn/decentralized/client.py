@@ -91,9 +91,9 @@ class Client:
             nr_parties = len(overlap_clients)
             node_to_states = self.get_node_to_states([node, *parents_union], overlap_clients)
             context = self.gen_context(nr_parties, len(node_to_states[node]))
-            self.set_vals_ret_enc(node, nr_parties, node_to_states, context, True)
+            self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
             enc_cols_clients = [
-                client.set_vals_ret_enc(node, nr_parties, node_to_states, context, True)
+                client.set_vals_ret_enc(node, nr_parties, node_to_states, context)
                 for client in neighbors
             ]
             column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
@@ -136,10 +136,10 @@ class Client:
     def set_vals_ret_enc(
             self, node: str, nr_parties: int,
             node_to_states: dict[str, list[str]],
-            context: ts.Context, enc=True) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
+            context: ts.Context | None) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
         values = self.get_expanded_values(node, node_to_states) ** (1 / nr_parties)
         self.tmp_vals = values.transpose()
-        return [ts.ckks_vector(context, col) if enc else col for col in self.tmp_vals]
+        return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
     def calc_col_ips(
             self, enc_cols_clients: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],

@@ -198,7 +198,7 @@ def benchmark_single(
 
         row["RMSE"] = round(calc_rmse(ref_facts, pred_facts), 3)
 
-        row["RelTotTime"] = round(total_pred_time / total_ref_time, 3)
+        row["RelTotTime"] = round(total_pred_time / total_ref_time, 2)
 
         # if not decentralized:
         #     row["StructureF1"] = round(sf1_score(ref_model, model), 3)
