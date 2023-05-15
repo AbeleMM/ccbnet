@@ -14,6 +14,8 @@ FPR = 0.0
 DS = psi.DataStructure.RAW
 PMD_TO_MAX_CM_BITS = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
 HE_DEC_BITS = 40
+SMPC_SEED = 1
+MIN_VAL = 1e-3
 
 
 class Client:
@@ -27,6 +29,7 @@ class Client:
         self.clients: list[Client] = []
         self.node_to_neighbors: dict[str, list[Client]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
+        self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
         self.tmp_vals: npt.NDArray[np.float_] = np.array([])
 
     def add_clients(self, clients: list['Client']) -> None:
@@ -97,6 +100,16 @@ class Client:
                 for client in neighbors
             ]
             column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
+
+            client_unmixed_shares = [
+                client.share_values(client.tmp_vals, len(overlap_clients))
+                for client in overlap_clients
+            ]
+            for i, shares in enumerate(map(list, zip(*client_unmixed_shares))):
+                overlap_clients[i].tmp_vals = np.array([1.0])
+                for share in shares:
+                    overlap_clients[i].tmp_vals = overlap_clients[i].tmp_vals * share
+
             for client in overlap_clients:
                 client.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 client.mark_overlap_solved(node)
@@ -196,6 +209,20 @@ class Client:
 
         return np.array(values)
 
+    def share_values(
+            self, vals: npt.NDArray[np.float_], n_shares: int) -> list[npt.NDArray[np.float_]]:
+        shares: list[npt.NDArray[np.float_]] = []
+        final_share = vals.copy()
+
+        for _ in range(n_shares - 1):
+            share = self.rand_gen.uniform(low=MIN_VAL, high=1.0, size=vals.shape)
+            shares.append(share)
+            final_share /= share
+
+        shares.append(final_share)
+
+        return shares
+
     def mark_overlap_solved(self, node: str) -> None:
         self.solved_overlaps.add(node)
 
@@ -205,7 +232,7 @@ class Client:
         if propagate:
             factors = [client.elimination_ask(query, evidence, False) for client in self.clients]
             factors.append(self.elimination_ask(query, evidence, False))
-            nodes = sorted(set(var for factor in factors for var in factor.variables))
+            nodes: list[str] = sorted(set(var for factor in factors for var in factor.variables))
         else:
             factors = [
                 cast(
@@ -219,7 +246,9 @@ class Client:
                 for cpd in self.node_to_cpd.values()
             ]
             nodes = self.cpd_nodes
-            no_marg_vars = set(self.node_to_neighbors)
+            no_marg_vars = set(
+                v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables
+            )
 
         node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
 
