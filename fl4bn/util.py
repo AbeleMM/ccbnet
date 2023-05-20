@@ -20,7 +20,6 @@ from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
-from sklearn.metrics import f1_score, mean_squared_error
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
@@ -156,7 +155,14 @@ def calc_rmse(
         ref_values.append(ref_row)
         pred_values.append(pred_row)
 
-    return cast(float, mean_squared_error(ref_values, pred_values, squared=False))
+    # # RMSE
+    # return cast(float, np.average(
+    #     np.sqrt(np.average((np.array(ref_values) - np.array(pred_values)) ** 2, axis=0))
+    # ))
+
+    # Brier
+    return cast(float,
+                np.sum((np.array(ref_values) - np.array(pred_values)) ** 2) / len(ref_fact_dicts))
 
 
 def benchmark_single(
