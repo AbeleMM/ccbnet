@@ -13,13 +13,14 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from combine import CombineMethod, combine_bns
-from decentralized.client import Client, combine
 from joblib import Memory
 from matplotlib.axes import Axes
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
+
+from fl4bn.party import Party, combine
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
@@ -112,7 +113,7 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
 
 def get_inf_res(
-        source: BayesianNetwork | Client,
+        source: BayesianNetwork | Party,
         samples: list[dict[str, str]],
         q_vars: list[str]) -> tuple[list[dict[str, DiscreteFactor]], float]:
     facts: list[dict[str, DiscreteFactor]] = []
@@ -173,7 +174,7 @@ def benchmark_single(
         learnt_model: BayesianNetwork | None = None,
         decentralized=False) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
-    name_to_bn: dict[str, BayesianNetwork | Client] = {}
+    name_to_bn: dict[str, BayesianNetwork | Party] = {}
     ref_facts, total_ref_time = get_inf_res(ref_model, test_samples, query_vars)
 
     if learnt_model:

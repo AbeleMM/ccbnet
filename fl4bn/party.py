@@ -18,7 +18,7 @@ SMPC_SEED = 1
 MIN_VAL = 1e-3
 
 
-class Client:
+class Party:
     def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
         self.identifier = identifier
         self.local_bn = local_bn
@@ -26,62 +26,62 @@ class Client:
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
-        self.clients: list[Client] = []
-        self.node_to_neighbors: dict[str, list[Client]] = defaultdict(list)
+        self.parties: list[Party] = []
+        self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
         self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
         self.tmp_vals: npt.NDArray[np.float_] = np.array([])
 
-    def add_clients(self, clients: list['Client']) -> None:
-        self.clients = sorted(
-            [client for client in clients if client.identifier != self.identifier],
+    def add_party(self, parties: list['Party']) -> None:
+        self.parties = sorted(
+            [party for party in parties if party.identifier != self.identifier],
             key=lambda x: x.identifier
         )
 
     def combine(self) -> None:
         self.find_overlaps()
-        for client in self.clients:
-            client.find_overlaps()
+        for party in self.parties:
+            party.find_overlaps()
 
         self.solve_overlaps()
-        for client in self.clients:
-            client.solve_overlaps()
+        for party in self.parties:
+            party.solve_overlaps()
 
     def find_overlaps(self) -> None:
         own_nodes_list = list(self.local_bn.nodes)
-        for client in self.clients:
-            if client.identifier < self.identifier:
+        for party in self.parties:
+            if party.identifier < self.identifier:
                 continue
 
-            client_nodes_list = list(client.local_bn.nodes)
+            party_nodes_list = list(party.local_bn.nodes)
             psi_c = psi.client.CreateWithNewKey(REVEAL_INTERSECTION)
             psi_s = psi.server.CreateWithNewKey(REVEAL_INTERSECTION)
             setup = psi.ServerSetup()
             setup.ParseFromString(
                 psi_s.CreateSetupMessage(
-                    FPR, len(client_nodes_list), own_nodes_list, DS
+                    FPR, len(party_nodes_list), own_nodes_list, DS
                 ).SerializeToString()
             )
             request = psi.Request()
             request.ParseFromString(
-                psi_c.CreateRequest(client_nodes_list).SerializeToString()
+                psi_c.CreateRequest(party_nodes_list).SerializeToString()
             )
             response = psi.Response()
             response.ParseFromString(psi_s.ProcessRequest(request).SerializeToString())
             intersect: list[str] = [
-                client_nodes_list[i] for i in psi_c.GetIntersection(setup, response)
+                party_nodes_list[i] for i in psi_c.GetIntersection(setup, response)
             ]
-            self.update_overlaps(client, intersect)
-            client.update_overlaps(self, intersect)
+            self.update_overlaps(party, intersect)
+            party.update_overlaps(self, intersect)
 
         self.node_to_neighbors = {
             node: sorted(set(neighbors), key=lambda x: x.identifier)
             for node, neighbors in self.node_to_neighbors.items()
         }
 
-    def update_overlaps(self, client: 'Client', intersect: list[str]) -> None:
+    def update_overlaps(self, party: 'Party', intersect: list[str]) -> None:
         for node in intersect:
-            self.node_to_neighbors[node].append(client)
+            self.node_to_neighbors[node].append(party)
 
     def solve_overlaps(self) -> None:
         for node in self.node_to_neighbors:
@@ -89,43 +89,43 @@ class Client:
                 continue
 
             neighbors = self.node_to_neighbors[node]
-            overlap_clients: list[Client] = [self, *neighbors]
-            parents_union = self.get_parents_union(node, overlap_clients)
-            nr_parties = len(overlap_clients)
-            node_to_states = self.get_node_to_states([node, *parents_union], overlap_clients)
+            overlap_parties: list[Party] = [self, *neighbors]
+            parents_union = self.get_parents_union(node, overlap_parties)
+            nr_parties = len(overlap_parties)
+            node_to_states = self.get_node_to_states([node, *parents_union], overlap_parties)
             context = self.gen_context(nr_parties, len(node_to_states[node]))
             self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
-            enc_cols_clients = [
-                client.set_vals_ret_enc(node, nr_parties, node_to_states, context)
-                for client in neighbors
+            enc_cols_parties = [
+                party.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+                for party in neighbors
             ]
-            column_sums: list[float] = self.calc_col_ips(enc_cols_clients, nr_parties)
+            column_sums: list[float] = self.calc_col_ips(enc_cols_parties, nr_parties)
 
-            client_unmixed_shares = [
-                client.share_values(client.tmp_vals, len(overlap_clients))
-                for client in overlap_clients
+            party_unmixed_shares = [
+                party.share_values(party.tmp_vals, len(overlap_parties))
+                for party in overlap_parties
             ]
-            for i, shares in enumerate(map(list, zip(*client_unmixed_shares))):
-                overlap_clients[i].tmp_vals = np.array([1.0])
+            for i, shares in enumerate(map(list, zip(*party_unmixed_shares))):
+                overlap_parties[i].tmp_vals = np.array([1.0])
                 for share in shares:
-                    overlap_clients[i].tmp_vals = overlap_clients[i].tmp_vals * share
+                    overlap_parties[i].tmp_vals = overlap_parties[i].tmp_vals * share
 
-            for client in overlap_clients:
-                client.set_combined_cpd(node, column_sums, parents_union, node_to_states)
-                client.mark_overlap_solved(node)
+            for party in overlap_parties:
+                party.set_combined_cpd(node, column_sums, parents_union, node_to_states)
+                party.mark_overlap_solved(node)
 
-    def get_parents_union(self, node: str, clients: list['Client']) -> list[str]:
-        return sorted(set().union(*[client.local_bn.get_parents(node) for client in clients]))
+    def get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
+        return sorted(set().union(*[party.local_bn.get_parents(node) for party in parties]))
 
     def get_node_to_states(
-            self, nodes: list[str], clients: list['Client']) -> dict[str, list[str]]:
+            self, nodes: list[str], parties: list['Party']) -> dict[str, list[str]]:
         node_to_val_dict: dict[str, dict[str, None]] = {node: {} for node in nodes}
 
-        for client in clients:
+        for party in parties:
             for node in nodes:
-                if node not in client.local_bn.states:
+                if node not in party.local_bn.states:
                     continue
-                node_to_val_dict[node].update(dict.fromkeys(client.local_bn.states[node], None))
+                node_to_val_dict[node].update(dict.fromkeys(party.local_bn.states[node], None))
 
         return {node: list(values_dict.keys()) for node, values_dict in node_to_val_dict.items()}
 
@@ -155,14 +155,14 @@ class Client:
         return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
     def calc_col_ips(
-            self, enc_cols_clients: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],
+            self, enc_cols_parties: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],
             nr_parties: int) -> list[float]:
         col_ips: list[float] = []
 
         for col_ind, own_col in enumerate(self.tmp_vals):
             res = own_col.tolist()
-            for client in enc_cols_clients:
-                res *= client[col_ind]
+            for party in enc_cols_parties:
+                res *= party[col_ind]
             if isinstance(res, ts.CKKSVector):
                 res_dec, *_ = cast(list[float], res.sum().decrypt())
             else:
@@ -230,7 +230,7 @@ class Client:
             self, query: list[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
         no_marg_vars: set[str] = set()
         if propagate:
-            factors = [client.elimination_ask(query, evidence, False) for client in self.clients]
+            factors = [party.elimination_ask(query, evidence, False) for party in self.parties]
             factors.append(self.elimination_ask(query, evidence, False))
             nodes: list[str] = sorted(set(var for factor in factors for var in factor.variables))
         else:
@@ -309,12 +309,12 @@ class Client:
         return dict(assignment)
 
 
-def combine(bns: list[BayesianNetwork]) -> Client:
-    clients = [Client(i, bn) for i, bn in enumerate(bns)]
+def combine(bns: list[BayesianNetwork]) -> Party:
+    parties = [Party(i, bn) for i, bn in enumerate(bns)]
 
-    for client in clients:
-        client.add_clients(clients)
+    for party in parties:
+        party.add_party(parties)
 
-    next(iter(clients)).combine()
+    next(iter(parties)).combine()
 
-    return min(clients, key=lambda x: x.identifier)
+    return min(parties, key=lambda x: x.identifier)
