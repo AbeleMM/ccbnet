@@ -122,15 +122,6 @@ def get_inf_res(
     for row in samples:
         if isinstance(source, BayesianNetwork):
             start = perf_counter_ns()
-            # query = cast(
-            #     dict[str, DiscreteFactor],
-            #     source.query(
-            #         variables=q_vars,
-            #         evidence=row,
-            #         joint=False,
-            #         show_progress=False
-            #     )
-            # )
             query = inference.disjoint_elimination_ask(source, q_vars, row)
         else:
             start = perf_counter_ns()
@@ -219,11 +210,18 @@ def benchmark_multi(
         samples_factor: int = 50000,
         include_learnt=False,
         in_out_inf_vars=True,
+        rand_inf_vars=True,
         decentralized=False,
-        r_seed: int | None = None) -> pd.DataFrame:
+        r_seed: int | None = None) -> dict[str, pd.DataFrame]:
     sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
-    res_multi = pd.DataFrame()
+    scen_to_df: dict[str, pd.DataFrame] = {}
+    scen_to_q_vars: dict[str, list[str]] = {}
+    scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
+    if in_out_inf_vars:
+        scen_to_df["inout"] = pd.DataFrame()
+    if rand_inf_vars:
+        scen_to_df["rand"] = pd.DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -237,21 +235,23 @@ def benchmark_multi(
         ]
         (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
+        test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
+
         if in_out_inf_vars:
             evidence_vars, query_vars = get_in_out_nodes(ref_model)
-        else:
+            scen_to_q_vars["inout"] = query_vars
+            scen_to_test_insts["inout"] = cast(
+                list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
+
+        if rand_inf_vars:
             rand = Random(r_seed)  # nosec
             shuffled_nodes: list[str] = list(ref_model.nodes())
             rand.shuffle(shuffled_nodes)
             mid_ind = len(shuffled_nodes) // 2
             evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
-
-        test_samples = cast(
-            list[dict[str, str]],
-            sampling.forward_sample(
-                size=test_counts, seed=r_seed, show_progress=False)[evidence_vars].to_dict(
-                    orient="records")
-        )
+            scen_to_q_vars["rand"] = query_vars
+            scen_to_test_insts["rand"] = cast(
+                list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
@@ -267,17 +267,18 @@ def benchmark_multi(
                 for i, train_vars in enumerate(clients_train_vars)
             ]
 
-            res_single = benchmark_single(
-                ref_model, trained_models, test_samples, query_vars,
-                learnt_model, decentralized
-            )
-            res_single[_BENCHMARK_INDEX] = round(overlap, 1)
+            for scen, d_f in scen_to_df.items():
+                res_single = benchmark_single(
+                    ref_model, trained_models, scen_to_test_insts[scen], scen_to_q_vars[scen],
+                    learnt_model if not overlap else None, decentralized
+                )
+                res_single[_BENCHMARK_INDEX] = round(overlap, 1)
+                scen_to_df[scen] = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 
-            res_multi = pd.concat([res_multi, res_single], ignore_index=True, copy=False)
+    for d_f in scen_to_df.values():
+        d_f.set_index(_BENCHMARK_INDEX, inplace=True)
 
-    res_multi.set_index(_BENCHMARK_INDEX, inplace=True)
-
-    return res_multi
+    return scen_to_df
 
 
 def _overlap_communities(

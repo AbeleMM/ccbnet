@@ -8,28 +8,36 @@ from util import BENCHMARK_PIVOT_COL, ExpWriter, benchmark_multi
 
 def plot_model_results(
         model_name: str,
-        in_out_inf_vars: bool,
         exp_writer: ExpWriter | None = None) -> None:
     model = get_example_model(model_name)
-    res = benchmark_multi(model, 4, 2000, 50000, True, in_out_inf_vars, True, 42)
+    res = benchmark_multi(ref_model=model,
+                          nr_clients=4,
+                          test_counts=2000,
+                          samples_factor=50000,
+                          include_learnt=True,
+                          in_out_inf_vars=True,
+                          rand_inf_vars=True,
+                          decentralized=True,
+                          r_seed=42)
 
-    if not exp_writer:
-        print('inout' if in_out_inf_vars else 'halves')
-        print(res)
-        return
+    for scenario, d_f in res.items():
+        if not exp_writer:
+            print(scenario)
+            print(d_f)
+            continue
 
-    for metric in [col for col in res.columns if col != BENCHMARK_PIVOT_COL]:
-        pivoted_res = res.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
-        axes = cast(
-            Axes,
-            pivoted_res.plot(kind="barh", title=model_name, xlabel=metric, width=0.9)
-        )
-        for container in cast(list[BarContainer], getattr(axes, "containers")):
-            axes.bar_label(container, label_type="center", fontsize="xx-small")
-        # axes.legend(mode="expand")
-        if exp_writer:
-            name = f"{model_name}_{'inout' if in_out_inf_vars else 'halves'}_{metric}"
-            exp_writer.save_fig(axes, name)
+        for metric in [col for col in d_f.columns if col != BENCHMARK_PIVOT_COL]:
+            pivoted_res = d_f.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
+            axes = cast(
+                Axes,
+                pivoted_res.plot(kind="barh", title=model_name, xlabel=metric, width=0.9)
+            )
+            for container in cast(list[BarContainer], getattr(axes, "containers")):
+                axes.bar_label(container, label_type="center", fontsize="xx-small")
+            # axes.legend(mode="expand")
+            if exp_writer:
+                name = f"{model_name}_{scenario}_{metric}"
+                exp_writer.save_fig(axes, name)
 
 
 def main() -> None:
@@ -39,8 +47,7 @@ def main() -> None:
         "alarm", "child", "insurance", "water"
     ]
     for net_name in nets:
-        for in_out_inf_vars in [True, False]:
-            plot_model_results(net_name, in_out_inf_vars, exp_writer)
+        plot_model_results(net_name, exp_writer)
 
 
 if __name__ == "__main__":
