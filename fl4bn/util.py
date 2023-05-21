@@ -89,7 +89,8 @@ def split_vars(
 
 
 @_memory.cache
-def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
+def train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, list[str]]) -> \
+        BayesianNetwork:
     est = HillClimbSearch(data=samples, use_cache=True)
 
     with warnings.catch_warnings():
@@ -108,6 +109,7 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
     bayes_net.fit(
         samples,
         estimator=BayesianEstimator,
+        state_names=states,
         complete_samples_only=True
     )
 
@@ -259,7 +261,7 @@ def benchmark_multi(
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
-            learnt_model = train_model(samples, max_in_deg)
+            learnt_model = train_model(samples, max_in_deg, ref_model.states)
         else:
             learnt_model = None
 
@@ -268,7 +270,7 @@ def benchmark_multi(
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)
 
             trained_models = [
-                train_model(clients_train_samples[i][train_vars], max_in_deg)
+                train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ]
 
