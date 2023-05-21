@@ -13,7 +13,7 @@ def plot_model_results(
     res = benchmark_multi(ref_model=model,
                           nr_clients=4,
                           test_counts=2000,
-                          samples_factor=50000,
+                          samples_factor=500,
                           include_learnt=True,
                           in_out_inf_vars=True,
                           rand_inf_vars=True,

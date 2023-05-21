@@ -78,10 +78,7 @@ def split_vars(
         shuffled_nodes: list[str] = list(bayes_net.nodes())
         rand.shuffle(shuffled_nodes)
         split_size = ceil(len(shuffled_nodes) / nr_splits)
-        communities = [
-            set(shuffled_nodes[i:i + split_size])
-            for i in range(0, len(shuffled_nodes), split_size)
-        ]
+        communities: list[set[str]] = [set(x) for x in np.array_split(shuffled_nodes, nr_splits)]
 
     shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
     rand.shuffle(shuffled_edges)
@@ -119,13 +116,13 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, li
 def get_inf_res(
         source: Model,
         samples: list[dict[str, str]],
-        q_vars: list[str]) -> tuple[list[dict[str, DiscreteFactor]], float]:
-    facts: list[dict[str, DiscreteFactor]] = []
+        q_vars: list[str]) -> tuple[list[DiscreteFactor], float]:
+    facts: list[DiscreteFactor] = []
     total_time = 0.0
 
-    for row in samples:
+    for i, row in enumerate(samples):
         start = perf_counter_ns()
-        query = source.disjoint_query(q_vars, row)
+        query = source.query([q_vars[i]], row)
 
         total_time += perf_counter_ns() - start
         facts.append(query)
@@ -133,37 +130,24 @@ def get_inf_res(
     return facts, total_time
 
 
-def calc_acc(
-        ref_fact_dicts: list[dict[str, DiscreteFactor]],
-        pred_fact_dicts: list[dict[str, DiscreteFactor]]) -> float:
-    ref_values: list[list[float]] = []
-    pred_values: list[list[float]] = []
+def calc_brier(
+        ref_facts: list[DiscreteFactor],
+        pred_facts: list[DiscreteFactor]) -> float:
+    acc = 0.0
 
-    for i, ref_fact_dict in enumerate(ref_fact_dicts):
-        ref_row: list[float] = []
-        pred_row: list[float] = []
+    for i, ref_fact in enumerate(ref_facts):
 
-        for node, ref_fact in ref_fact_dict.items():
+        for node in ref_fact.variables:
             for state in ref_fact.state_names[node]:
                 node_state = {node: state}
-                ref_row.append(cast(float, ref_fact.get_value(**node_state)))
+                ref_val = cast(float, ref_fact.get_value(**node_state))
                 try:
-                    pred_val = cast(float, pred_fact_dicts[i][node].get_value(**node_state))
+                    pred_val = cast(float, pred_facts[i].get_value(**node_state))
                 except ValueError:
                     pred_val = 0.0
-                pred_row.append(pred_val)
+                acc += (ref_val - pred_val) ** 2
 
-        ref_values.append(ref_row)
-        pred_values.append(pred_row)
-
-    # RMSE
-    return cast(float, np.average(
-        np.sqrt(np.average((np.array(ref_values) - np.array(pred_values)) ** 2, axis=0))
-    ))
-
-    # Brier
-    # return cast(float,
-    #             np.sum((np.array(ref_values) - np.array(pred_values)) ** 2) / len(ref_fact_dicts))
+    return acc / len(ref_facts)
 
 
 def benchmark_single(
@@ -188,14 +172,14 @@ def benchmark_single(
 
     name_to_bn["Decentralized"] = combine(trained_models)
 
-    # name_to_bn["ProdOuts"] = ProdOuts(trained_models)
-    # name_to_bn["AvgOuts"] = AvgOuts(trained_models)
+    name_to_bn["ProdOuts"] = ProdOuts(trained_models)
+    name_to_bn["AvgOuts"] = AvgOuts(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_facts, total_pred_time = get_inf_res(model, test_samples, query_vars)
 
-        row["RMSE"] = round(calc_acc(ref_facts, pred_facts), 3)
+        row["Brier"] = round(calc_brier(ref_facts, pred_facts), 3)
 
         row["RelTotTime"] = round(total_pred_time / total_ref_time, 2)
 
@@ -224,10 +208,11 @@ def benchmark_multi(
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
     scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
-    if in_out_inf_vars:
-        scen_to_df["inout"] = pd.DataFrame()
-    if rand_inf_vars:
-        scen_to_df["rand"] = pd.DataFrame()
+    # if in_out_inf_vars:
+    #     scen_to_df["inout"] = pd.DataFrame()
+    # if rand_inf_vars:
+    #     scen_to_df["rand"] = pd.DataFrame()
+    scen_to_df["mix"] = pd.DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -241,23 +226,35 @@ def benchmark_multi(
         ]
         (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
-        test_samples = sampling.forward_sample(size=test_counts, seed=r_seed, show_progress=False)
+        test_samples = cast(list[dict[str, str]], sampling.forward_sample(
+            size=test_counts, seed=r_seed, show_progress=False).to_dict(orient="records"))
 
-        if in_out_inf_vars:
-            evidence_vars, query_vars = get_in_out_nodes(ref_model)
-            scen_to_q_vars["inout"] = query_vars
-            scen_to_test_insts["inout"] = cast(
-                list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
+        rand = Random(r_seed)
 
-        if rand_inf_vars:
-            rand = Random(r_seed)  # nosec
-            shuffled_nodes: list[str] = list(ref_model.nodes())
-            rand.shuffle(shuffled_nodes)
-            mid_ind = len(shuffled_nodes) // 2
-            evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
-            scen_to_q_vars["rand"] = query_vars
-            scen_to_test_insts["rand"] = cast(
-                list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
+        scen_to_test_insts["mix"] = []
+        scen_to_q_vars["mix"] = []
+
+        for i, test_sample in enumerate(test_samples):
+            evid = rand.sample(ref_model.nodes(), round(0.2 * len(ref_model)))
+            scen_to_test_insts["mix"].append({k: test_sample[k] for k in evid})
+            scen_to_q_vars["mix"].append(
+                rand.choice([n for n in ref_model.nodes() if n not in evid]))
+
+        # if in_out_inf_vars:
+        #     evidence_vars, query_vars = get_in_out_nodes(ref_model)
+        #     scen_to_q_vars["inout"] = query_vars
+        #     scen_to_test_insts["inout"] = cast(
+        #         list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
+
+        # if rand_inf_vars:
+        #     rand = Random(r_seed)  # nosec
+        #     shuffled_nodes: list[str] = list(ref_model.nodes())
+        #     rand.shuffle(shuffled_nodes)
+        #     mid_ind = len(shuffled_nodes) // 2
+        #     evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
+        #     scen_to_q_vars["rand"] = query_vars
+        #     scen_to_test_insts["rand"] = cast(
+        #         list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
@@ -267,7 +264,7 @@ def benchmark_multi(
 
         for overlap in np.arange(0.0, 0.6, 0.1):
             print(overlap)
-            clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)
+            clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
 
             trained_models = [
                 train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
