@@ -2,11 +2,13 @@ import itertools
 from collections import defaultdict
 from typing import cast
 
+import networkx as nx
 import numpy as np
 import numpy.typing as npt
 import private_set_intersection.python as psi
 import tenseal as ts
-from pgmpy.factors.discrete.CPD import DiscreteFactor, TabularCPD
+from model import Model, var_elim
+from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
 REVEAL_INTERSECTION = True
@@ -18,11 +20,10 @@ SMPC_SEED = 1
 MIN_VAL = 1e-3
 
 
-class Party:
+class Party(Model):
     def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
         self.identifier = identifier
         self.local_bn = local_bn
-        self.cpd_nodes: list[str] = sorted(local_bn.nodes)
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
@@ -30,7 +31,39 @@ class Party:
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
         self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
-        self.tmp_vals: npt.NDArray[np.float_] = np.array([])
+        self.no_marg_nodes: set[str]
+        self.tmp_vals: npt.NDArray[np.float_]
+
+    def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
+        facts: list[DiscreteFactor] = []
+
+        for party in [cast(Party, self), *self.parties]:
+            party_facts = [
+                cast(
+                    DiscreteFactor,
+                    cpd.to_factor().reduce(
+                        [(var, evidence[var]) for var in cpd.variables if var in evidence],
+                        inplace=False,
+                        show_warnings=False
+                    )
+                )
+                for cpd in party.node_to_cpd.values()
+            ]
+            facts.append(var_elim(targets, evidence,
+                                  party_facts, list(party.node_to_cpd), party.no_marg_nodes))
+
+        nodes: list[str] = list(set(var for factor in facts for var in factor.variables))
+
+        return var_elim(targets, evidence, facts, nodes, set())
+
+    def as_dig(self) -> nx.DiGraph:
+        dig = nx.DiGraph()
+
+        for party in [cast(Party, self), *self.parties]:
+            dig.add_edges_from(
+                [(p, n) for n, f in party.node_to_cpd.items() for p in f.get_evidence()])
+
+        return dig
 
     def add_party(self, parties: list['Party']) -> None:
         self.parties = sorted(
@@ -39,12 +72,10 @@ class Party:
         )
 
     def combine(self) -> None:
-        self.find_overlaps()
-        for party in self.parties:
+        for party in [cast(Party, self), *self.parties]:
             party.find_overlaps()
 
-        self.solve_overlaps()
-        for party in self.parties:
+        for party in [cast(Party, self), *self.parties]:
             party.solve_overlaps()
 
     def find_overlaps(self) -> None:
@@ -113,6 +144,9 @@ class Party:
             for party in overlap_parties:
                 party.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 party.mark_overlap_solved(node)
+
+        self.no_marg_nodes = set(
+            v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables)
 
     def get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
         return sorted(set().union(*[party.local_bn.get_parents(node) for party in parties]))
@@ -225,88 +259,6 @@ class Party:
 
     def mark_overlap_solved(self, node: str) -> None:
         self.solved_overlaps.add(node)
-
-    def elimination_ask(
-            self, query: list[str], evidence: dict[str, str], propagate=True) -> DiscreteFactor:
-        no_marg_vars: set[str] = set()
-        if propagate:
-            factors = [party.elimination_ask(query, evidence, False) for party in self.parties]
-            factors.append(self.elimination_ask(query, evidence, False))
-            nodes: list[str] = sorted(set(var for factor in factors for var in factor.variables))
-        else:
-            factors = [
-                cast(
-                    DiscreteFactor,
-                    cpd.to_factor().reduce(
-                        [(var, evidence[var]) for var in cpd.variables if var in evidence],
-                        inplace=False,
-                        show_warnings=False
-                    )
-                )
-                for cpd in self.node_to_cpd.values()
-            ]
-            nodes = self.cpd_nodes
-            no_marg_vars = set(
-                v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables
-            )
-
-        node_to_factors: dict[str, list[DiscreteFactor]] = defaultdict(list)
-
-        for factor in factors:
-            for variable in cast(list[str], factor.variables):
-                node_to_factors[variable].append(factor)
-
-        for var in nodes:
-            if var in evidence or var in query:
-                continue
-
-            relevant_factors = node_to_factors[var].copy()
-
-            factors = [factor for factor in factors if factor not in relevant_factors]
-
-            product_relevant_factors = DiscreteFactor([], [], [1])
-
-            for relevant_factor in relevant_factors:
-                product_relevant_factors.product(relevant_factor, inplace=True)
-
-            if var not in no_marg_vars:
-                product_relevant_factors.marginalize([var], inplace=True)
-
-            for node_factors in node_to_factors.values():
-                for rel_fact in relevant_factors:
-                    if rel_fact in node_factors:
-                        node_factors.remove(rel_fact)
-
-            for prf_var in cast(list[str], product_relevant_factors.variables):
-                node_to_factors[prf_var].append(product_relevant_factors)
-
-            factors.append(product_relevant_factors)
-
-        product_factors = DiscreteFactor([], [], [1])
-
-        for factor in factors:
-            product_factors.product(factor, inplace=True)
-
-        product_factors.normalize(inplace=True)
-
-        return product_factors
-
-    def disjoint_elimination_ask(
-            self, query: list[str], evidence: dict[str, str]) -> dict[str, DiscreteFactor]:
-        factor = self.elimination_ask(query, evidence)
-
-        return {
-            var: cast(
-                DiscreteFactor, factor.marginalize([q for q in query if q != var], inplace=False))
-            for var in query
-        }
-
-    def map_elimination_ask(self, query: list[str], evidence: dict[str, str]) -> dict[str, str]:
-        factor = self.elimination_ask(query, evidence)
-        argmax = np.argmax(factor.values)
-        assignment, *_ = cast(list[list[tuple[str, str]]], factor.assignment([argmax]))
-
-        return dict(assignment)
 
 
 def combine(bns: list[BayesianNetwork]) -> Party:

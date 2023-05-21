@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 from pgmpy.factors.discrete.CPD import TabularCPD
 from pgmpy.models import BayesianNetwork
+from single_net import SingleNet
 
 
 class CombineMethod(Enum):
@@ -15,22 +16,22 @@ class CombineMethod(Enum):
     UNION = "Union"
 
 
-def combine_bns(bns: list[BayesianNetwork], method: CombineMethod) -> BayesianNetwork:
-    return combine_bns_weighted({bn: 1 for bn in bns}, method)
+def combine_bns(bns: list[BayesianNetwork], method: CombineMethod, allow_loops=False) -> SingleNet:
+    return combine_bns_weighted({bn: 1 for bn in bns}, method, allow_loops)
 
 
 def combine_bns_weighted(
         bn_to_conf: dict[BayesianNetwork, float],
-        method: CombineMethod) -> BayesianNetwork:
+        method: CombineMethod, allow_loops: bool) -> SingleNet:
     # Assumes nodes identified by strings & same nodes in different networks have same values
     # TODO potentially use class
 
     if method is CombineMethod.MULTI:
-        return _combine_bns_weighted_multi(bn_to_conf)
+        return _combine_bns_weighted_multi(bn_to_conf, allow_loops)
 
     node_to_bns: dict[str, list[BayesianNetwork]] = defaultdict(list)
     node_to_vals: dict[str, list[int | str]] = {}
-    bn_combined = BayesianNetwork()
+    bn_combined = SingleNet(allow_loops)
 
     for bayes_net in bn_to_conf:
         node_to_vals.update(bayes_net.states)
@@ -120,13 +121,16 @@ def _combine_int_node(
         _preserve_from_bn(bn_combined, node, bn_perserve)
 
 
-def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float]) -> BayesianNetwork:
+def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float], allow_loops: bool) -> \
+        SingleNet:
     iter_bn_to_conf = iter(bn_to_conf.items())
     bn_combined, conf_combined = next(iter_bn_to_conf)
+    bn_combined = SingleNet.from_bn(bn_combined, allow_loops)
     for bayes_net, confidence in iter_bn_to_conf:
         bn_combined = combine_bns_weighted(
             {bn_combined: conf_combined, bayes_net: confidence},
-            CombineMethod.SINGLE
+            CombineMethod.SINGLE,
+            allow_loops
         )
         conf_combined = (conf_combined + confidence) / 2
     return bn_combined

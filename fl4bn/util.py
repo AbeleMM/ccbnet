@@ -7,7 +7,6 @@ from random import Random
 from time import perf_counter_ns
 from typing import Collection, cast
 
-import inference
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -15,12 +14,13 @@ import pandas as pd
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from matplotlib.axes import Axes
+from model import Model
+from party import combine
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
-
-from fl4bn.party import Party, combine
+from single_net import SingleNet
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
@@ -113,19 +113,15 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int) -> BayesianNetwork:
 
 
 def get_inf_res(
-        source: BayesianNetwork | Party,
+        source: Model,
         samples: list[dict[str, str]],
         q_vars: list[str]) -> tuple[list[dict[str, DiscreteFactor]], float]:
     facts: list[dict[str, DiscreteFactor]] = []
     total_time = 0.0
 
     for row in samples:
-        if isinstance(source, BayesianNetwork):
-            start = perf_counter_ns()
-            query = inference.disjoint_elimination_ask(source, q_vars, row)
-        else:
-            start = perf_counter_ns()
-            query = source.disjoint_elimination_ask(q_vars, row)
+        start = perf_counter_ns()
+        query = source.disjoint_query(q_vars, row)
 
         total_time += perf_counter_ns() - start
         facts.append(query)
@@ -174,15 +170,15 @@ def benchmark_single(
         learnt_model: BayesianNetwork | None = None,
         decentralized=False) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
-    name_to_bn: dict[str, BayesianNetwork | Party] = {}
-    ref_facts, total_ref_time = get_inf_res(ref_model, test_samples, query_vars)
+    name_to_bn: dict[str, Model] = {}
+    ref_facts, total_ref_time = get_inf_res(SingleNet.from_bn(ref_model), test_samples, query_vars)
 
     if learnt_model:
-        name_to_bn["Learnt"] = learnt_model
+        name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
 
+    # # TODO switch to combine_bns_weighted (by amount of samples)
     # for method in CombineMethod:
-    #     # TODO switch to combine_bns_weighted (by amount of samples)
-    #     name_to_bn[method.value] = VariableElimination(combine_bns(trained_models, method))
+    #     name_to_bn[method.value] = combine_bns(trained_models, method)
 
     name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI)
     name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION)
@@ -198,12 +194,11 @@ def benchmark_single(
 
         row["RelTotTime"] = round(total_pred_time / total_ref_time, 2)
 
-        # if not decentralized:
-        #     row["StructureF1"] = round(sf1_score(ref_model, model), 3)
+        # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 
-        #     row["SHD"] = round(shd_score(ref_model, model), 3)
+        # row["SHD"] = shd_score(ref_model, model)
 
-        #     row["EdgeCount"] = len(model.edges())
+        # row["EdgeCount"] = len(model.edges())
 
         res_single.append(row)
 
@@ -267,6 +262,7 @@ def benchmark_multi(
             learnt_model = None
 
         for overlap in np.arange(0.0, 0.6, 0.1):
+            print(overlap)
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, seed=r_seed)
 
             trained_models = [
@@ -334,37 +330,6 @@ def _overlap_communities(
         community_sets[node_to_community[node_inc]].add(node_out)
 
     return [sorted(community) for community in community_sets]
-
-
-def _bn_to_adj_mat(model: BayesianNetwork, preserve_dir: bool) -> np.ndarray:
-    model_transformed = model if preserve_dir else model.to_undirected()
-    return nx.convert_matrix.to_numpy_array(model_transformed, nodelist=model.nodes(), weight="")
-
-
-def sf1_score(true_model: BayesianNetwork, estimated_model: BayesianNetwork) -> float:
-    true_adj = _bn_to_adj_mat(true_model, False)
-    estimated_adj = _bn_to_adj_mat(estimated_model, False)
-
-    return cast(float, f1_score(np.ravel(true_adj), np.ravel(estimated_adj)))
-
-
-# https://github.com/FenTechSolutions/CausalDiscoveryToolbox/blob/master/cdt/metrics.py
-def shd_score(
-        true_model: BayesianNetwork,
-        estimated_model: BayesianNetwork,
-        double_for_anticausal=True) -> float:
-    true_adj = _bn_to_adj_mat(true_model, True)
-    estimated_adj = _bn_to_adj_mat(estimated_model, True)
-
-    diff = np.abs(true_adj - estimated_adj)
-
-    if double_for_anticausal:
-        return np.sum(diff)
-
-    diff = diff + diff.transpose()
-    diff[diff > 1] = 1
-
-    return float(np.sum(diff) / 2)
 
 
 class ExpWriter():
