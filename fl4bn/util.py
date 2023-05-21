@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
+from avg_outs import AvgOuts
 from combine import CombineMethod, combine_bns
 from joblib import Memory
 from matplotlib.axes import Axes
@@ -20,6 +21,7 @@ from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
+from prod_outs import ProdOuts
 from single_net import SingleNet
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
@@ -129,7 +131,7 @@ def get_inf_res(
     return facts, total_time
 
 
-def calc_rmse(
+def calc_acc(
         ref_fact_dicts: list[dict[str, DiscreteFactor]],
         pred_fact_dicts: list[dict[str, DiscreteFactor]]) -> float:
     ref_values: list[list[float]] = []
@@ -152,14 +154,14 @@ def calc_rmse(
         ref_values.append(ref_row)
         pred_values.append(pred_row)
 
-    # # RMSE
-    # return cast(float, np.average(
-    #     np.sqrt(np.average((np.array(ref_values) - np.array(pred_values)) ** 2, axis=0))
-    # ))
+    # RMSE
+    return cast(float, np.average(
+        np.sqrt(np.average((np.array(ref_values) - np.array(pred_values)) ** 2, axis=0))
+    ))
 
     # Brier
-    return cast(float,
-                np.sum((np.array(ref_values) - np.array(pred_values)) ** 2) / len(ref_fact_dicts))
+    # return cast(float,
+    #             np.sum((np.array(ref_values) - np.array(pred_values)) ** 2) / len(ref_fact_dicts))
 
 
 def benchmark_single(
@@ -167,8 +169,7 @@ def benchmark_single(
         trained_models: list[BayesianNetwork],
         test_samples: list[dict[str, str]],
         query_vars: list[str],
-        learnt_model: BayesianNetwork | None = None,
-        decentralized=False) -> pd.DataFrame:
+        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
     name_to_bn: dict[str, Model] = {}
     ref_facts, total_ref_time = get_inf_res(SingleNet.from_bn(ref_model), test_samples, query_vars)
@@ -183,14 +184,16 @@ def benchmark_single(
     name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI)
     name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION)
 
-    if decentralized:
-        name_to_bn["Decentralized"] = combine(trained_models)
+    name_to_bn["Decentralized"] = combine(trained_models)
+
+    # name_to_bn["ProdOuts"] = ProdOuts(trained_models)
+    # name_to_bn["AvgOuts"] = AvgOuts(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_facts, total_pred_time = get_inf_res(model, test_samples, query_vars)
 
-        row["RMSE"] = round(calc_rmse(ref_facts, pred_facts), 3)
+        row["RMSE"] = round(calc_acc(ref_facts, pred_facts), 3)
 
         row["RelTotTime"] = round(total_pred_time / total_ref_time, 2)
 
@@ -213,7 +216,6 @@ def benchmark_multi(
         include_learnt=False,
         in_out_inf_vars=True,
         rand_inf_vars=True,
-        decentralized=False,
         r_seed: int | None = None) -> dict[str, pd.DataFrame]:
     sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
@@ -273,8 +275,7 @@ def benchmark_multi(
             for scen, d_f in scen_to_df.items():
                 res_single = benchmark_single(
                     ref_model, trained_models, scen_to_test_insts[scen], scen_to_q_vars[scen],
-                    learnt_model if not overlap else None, decentralized
-                )
+                    learnt_model if not overlap else None)
                 res_single[_BENCHMARK_INDEX] = round(overlap, 1)
                 scen_to_df[scen] = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 

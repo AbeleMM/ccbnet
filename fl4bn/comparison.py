@@ -17,7 +17,6 @@ def plot_model_results(
                           include_learnt=True,
                           in_out_inf_vars=True,
                           rand_inf_vars=True,
-                          decentralized=True,
                           r_seed=42)
 
     for scenario, d_f in res.items():
