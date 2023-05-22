@@ -10,6 +10,7 @@ def main() -> None:
     client_counts = [4]
     for net_name in nets:
         model = get_example_model(net_name)
+        model.name = net_name
         for client_count in client_counts:
             res = benchmark_multi(
                 ref_model=model,

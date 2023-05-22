@@ -1,3 +1,4 @@
+import logging
 import warnings
 from collections import Counter
 from pathlib import Path
@@ -19,10 +20,14 @@ from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 from prod_outs import ProdOuts
 from single_net import SingleNet
+from tqdm import tqdm
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
 BENCHMARK_PIVOT_COL: str = "Name"
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                    level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -115,7 +120,7 @@ def get_inf_res(
     facts: list[DiscreteFactor] = []
     total_time = 0.0
 
-    for i, row in enumerate(samples):
+    for i, row in tqdm(enumerate(samples)):
         start = perf_counter_ns()
         query = source.query([q_vars[i]], row)
 
@@ -155,6 +160,8 @@ def benchmark_single(
     name_to_bn: dict[str, Model] = {}
     ref_facts, total_ref_time = get_inf_res(SingleNet.from_bn(ref_model), test_samples, query_vars)
 
+    LOGGER.info("Benchmarking round started")
+
     if learnt_model:
         name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
 
@@ -173,6 +180,7 @@ def benchmark_single(
     name_to_bn["ProdOuts"] = ProdOuts(trained_models)
 
     for name, model in name_to_bn.items():
+        LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_facts, total_pred_time = get_inf_res(model, test_samples, query_vars)
 
@@ -201,6 +209,7 @@ def benchmark_multi(
         in_out_inf_vars=True,
         rand_inf_vars=True,
         r_seed: int | None = None) -> dict[str, pd.DataFrame]:
+    LOGGER.info("%s %s", ref_model.name, nr_clients)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
@@ -225,6 +234,8 @@ def benchmark_multi(
             for i in range(nr_clients)
         ]
 
+        LOGGER.info("Sampled")
+
         test_samples = cast(list[dict[str, str]],
                             all_samples[-test_counts:].to_dict(orient="records"))
 
@@ -237,6 +248,8 @@ def benchmark_multi(
             scen_to_test_insts["mix"].append({k: test_sample[k] for k in evid})
             scen_to_q_vars["mix"].append(
                 rand.choice([n for n in ref_model.nodes() if n not in evid]))
+
+        LOGGER.info("Found evidence & queries for tests")
 
         # if in_out_inf_vars:
         #     evidence_vars, query_vars = get_in_out_nodes(ref_model)
@@ -263,13 +276,15 @@ def benchmark_multi(
             learnt_model = None
 
         for overlap in overlap_ratios:
-            print(overlap)
+            LOGGER.info("Overlap %s", overlap)
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
 
             trained_models = [
                 train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ]
+
+            LOGGER.info("Trained models")
 
             for scen, d_f in scen_to_df.items():
                 res_single = benchmark_single(
