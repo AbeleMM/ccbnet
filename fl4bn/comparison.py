@@ -1,5 +1,6 @@
 from typing import cast
 
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.container import BarContainer
 from pgmpy.utils import get_example_model
@@ -12,8 +13,9 @@ def plot_model_results(
     model = get_example_model(model_name)
     res = benchmark_multi(ref_model=model,
                           nr_clients=4,
-                          test_counts=2000,
+                          overlap_ratios=np.arange(0.0, 0.6, 0.1).tolist(),
                           samples_factor=500,
+                          test_counts=2000,
                           include_learnt=True,
                           in_out_inf_vars=True,
                           rand_inf_vars=True,

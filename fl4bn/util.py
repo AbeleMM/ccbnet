@@ -77,7 +77,6 @@ def split_vars(
     else:
         shuffled_nodes: list[str] = list(bayes_net.nodes())
         rand.shuffle(shuffled_nodes)
-        split_size = ceil(len(shuffled_nodes) / nr_splits)
         communities: list[set[str]] = [set(x) for x in np.array_split(shuffled_nodes, nr_splits)]
 
     shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
@@ -172,8 +171,8 @@ def benchmark_single(
 
     name_to_bn["Decentralized"] = combine(trained_models)
 
-    name_to_bn["ProdOuts"] = ProdOuts(trained_models)
     name_to_bn["AvgOuts"] = AvgOuts(trained_models)
+    name_to_bn["ProdOuts"] = ProdOuts(trained_models)
 
     for name, model in name_to_bn.items():
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
@@ -197,8 +196,9 @@ def benchmark_single(
 def benchmark_multi(
         ref_model: BayesianNetwork,
         nr_clients: int,
-        test_counts: int = 2000,
+        overlap_ratios: list[float],
         samples_factor: int = 50000,
+        test_counts: int = 2000,
         include_learnt=False,
         in_out_inf_vars=True,
         rand_inf_vars=True,
@@ -234,7 +234,7 @@ def benchmark_multi(
         scen_to_test_insts["mix"] = []
         scen_to_q_vars["mix"] = []
 
-        for i, test_sample in enumerate(test_samples):
+        for test_sample in test_samples:
             evid = rand.sample(ref_model.nodes(), round(0.2 * len(ref_model)))
             scen_to_test_insts["mix"].append({k: test_sample[k] for k in evid})
             scen_to_q_vars["mix"].append(
@@ -262,7 +262,7 @@ def benchmark_multi(
         else:
             learnt_model = None
 
-        for overlap in np.arange(0.0, 0.6, 0.1):
+        for overlap in overlap_ratios:
             print(overlap)
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
 
