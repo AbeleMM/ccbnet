@@ -26,5 +26,6 @@ def main() -> None:
             for scenario, d_f in res.items():
                 writer.write(net_name, client_count, scenario, d_f)
 
+
 if __name__ == "__main__":
     main()
