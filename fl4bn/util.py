@@ -1,7 +1,6 @@
 import warnings
 from collections import Counter
 from datetime import datetime, timezone
-from math import ceil
 from pathlib import Path
 from random import Random
 from time import perf_counter_ns
@@ -12,7 +11,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from avg_outs import AvgOuts
-from combine import CombineMethod, combine_bns
+from combine import CombineMethod, CombineOp, combine_bns
 from joblib import Memory
 from matplotlib.axes import Axes
 from model import Model
@@ -166,8 +165,10 @@ def benchmark_single(
     # for method in CombineMethod:
     #     name_to_bn[method.value] = combine_bns(trained_models, method)
 
-    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, False)
-    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, False)
+    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, False,
+                                        CombineOp.GEO_MEAN)
+    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, False,
+                                      CombineOp.GEO_MEAN)
 
     name_to_bn["Decentralized"] = combine(trained_models)
 

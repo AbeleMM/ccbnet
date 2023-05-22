@@ -1,6 +1,6 @@
 import itertools
 from collections import defaultdict
-from enum import Enum
+from enum import Enum, auto
 from typing import cast
 
 import numpy as np
@@ -16,18 +16,25 @@ class CombineMethod(Enum):
     UNION = "Union"
 
 
-def combine_bns(bns: list[BayesianNetwork], method: CombineMethod, allow_loops=False) -> SingleNet:
-    return combine_bns_weighted({bn: 1 for bn in bns}, method, allow_loops)
+class CombineOp(Enum):
+    SUPERPOS = auto()
+    ARITH_MEAN = auto()
+    GEO_MEAN = auto()
+
+
+def combine_bns(bns: list[BayesianNetwork], method: CombineMethod, allow_loops=False,
+                combine_op=CombineOp.GEO_MEAN) -> SingleNet:
+    return combine_bns_weighted({bn: 1 for bn in bns}, method, allow_loops, combine_op)
 
 
 def combine_bns_weighted(
         bn_to_conf: dict[BayesianNetwork, float],
-        method: CombineMethod, allow_loops: bool) -> SingleNet:
+        method: CombineMethod, allow_loops: bool, combine_op: CombineOp) -> SingleNet:
     # Assumes nodes identified by strings & same nodes in different networks have same values
     # TODO potentially use class
 
     if method is CombineMethod.MULTI:
-        return _combine_bns_weighted_multi(bn_to_conf, allow_loops)
+        return _combine_bns_weighted_multi(bn_to_conf, allow_loops, combine_op)
 
     node_to_bns: dict[str, list[BayesianNetwork]] = defaultdict(list)
     node_to_vals: dict[str, list[int | str]] = {}
@@ -85,7 +92,8 @@ def combine_bns_weighted(
                 node_cpd = TabularCPD(
                     variable=node,
                     variable_card=len(node_to_vals[node]),
-                    values=_get_ext_node_values(node, parents_union, node_to_vals, node_bns),
+                    values=_get_ext_node_values(node, parents_union, node_to_vals, node_bns,
+                                                combine_op),
                     evidence=parents_union,
                     evidence_card=[len(node_to_vals[p]) for p in parents_union],
                     state_names={node_: node_to_vals[node_] for node_ in [node, *parents_union]}
@@ -121,8 +129,8 @@ def _combine_int_node(
         _preserve_from_bn(bn_combined, node, bn_perserve)
 
 
-def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float], allow_loops: bool) -> \
-        SingleNet:
+def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float], allow_loops: bool,
+                                combine_op: CombineOp) -> SingleNet:
     iter_bn_to_conf = iter(bn_to_conf.items())
     bn_combined, conf_combined = next(iter_bn_to_conf)
     bn_combined = SingleNet.from_bn(bn_combined, allow_loops)
@@ -130,7 +138,8 @@ def _combine_bns_weighted_multi(bn_to_conf: dict[BayesianNetwork, float], allow_
         bn_combined = combine_bns_weighted(
             {bn_combined: conf_combined, bayes_net: confidence},
             CombineMethod.SINGLE,
-            allow_loops
+            allow_loops,
+            combine_op
         )
         conf_combined = (conf_combined + confidence) / 2
     return bn_combined
@@ -153,7 +162,8 @@ def _get_superposition(l_val: float, r_val: float) -> float:
 
 def _get_ext_node_values(
         node: str, parents_union: list[str],
-        node_to_vals: dict[str, list], node_bns: list[BayesianNetwork]) -> npt.NDArray[np.float_]:
+        node_to_vals: dict[str, list], node_bns: list[BayesianNetwork],
+        combine_op: CombineOp) -> npt.NDArray[np.float_]:
     nr_node_vals: int = len(node_to_vals[node])
     transp_table: list[list[float]] = []
 
@@ -172,11 +182,20 @@ def _get_ext_node_values(
             )
             cpd.marginalize([v for v in cpd.variables if v != node], inplace=True)
             # TODO account for confidence
-            # tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
-            # tt_row = [v + cpd.values[i] for i, v in enumerate(tt_row)]
-            tt_row = [v * cpd.values[i] for i, v in enumerate(tt_row)]
-        # tt_row = [v / len(node_bns) for v in tt_row]
-        tt_row = [v ** (1 / len(node_bns)) for v in tt_row]
+            match combine_op:
+                case CombineOp.SUPERPOS:
+                    tt_row = [_get_superposition(v, cpd.values[i]) for i, v in enumerate(tt_row)]
+                case CombineOp.ARITH_MEAN:
+                    tt_row = [v + cpd.values[i] for i, v in enumerate(tt_row)]
+                case CombineOp.GEO_MEAN:
+                    tt_row = [v * cpd.values[i] for i, v in enumerate(tt_row)]
+        match combine_op:
+            case CombineOp.SUPERPOS:
+                pass
+            case CombineOp.ARITH_MEAN:
+                tt_row = [v / len(node_bns) for v in tt_row]
+            case CombineOp.GEO_MEAN:
+                tt_row = [v ** (1 / len(node_bns)) for v in tt_row]
         transp_table.append(tt_row)
 
     return np.array(transp_table).T
