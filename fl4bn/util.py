@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-from avg_outs import AvgOuts
+from avg_outs import AvgOuts, MeanType
 from combine import CombineMethod, CombineOp, combine_bns
 from joblib import Memory
 from matplotlib.axes import Axes
@@ -172,7 +172,7 @@ def benchmark_single(
 
     name_to_bn["Decentralized"] = combine(trained_models)
 
-    name_to_bn["AvgOuts"] = AvgOuts(trained_models)
+    name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.ARITH)
     name_to_bn["ProdOuts"] = ProdOuts(trained_models)
 
     for name, model in name_to_bn.items():
