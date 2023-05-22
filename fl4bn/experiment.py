@@ -1,19 +1,16 @@
 import warnings
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 from random import Random
 from time import perf_counter_ns
 from typing import Collection, cast
 
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
 from avg_outs import AvgOuts, MeanType
 from combine import CombineMethod, CombineOp, combine_bns
 from joblib import Memory
-from matplotlib.axes import Axes
 from model import Model
 from party import combine
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
@@ -333,15 +330,3 @@ def _overlap_communities(
         community_sets[node_to_community[node_inc]].add(node_out)
 
     return [sorted(community) for community in community_sets]
-
-
-class ExpWriter():
-    def __init__(self) -> None:
-        time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-        self.res_dir = Path(__file__).parents[1] / "out" / time_str
-        self.res_dir.mkdir(parents=True, exist_ok=True)
-
-    def save_fig(self, axes: Axes, name: str) -> None:
-        fig = axes.get_figure()
-        fig.savefig(str((self.res_dir / name).with_suffix(".png")), bbox_inches="tight")
-        plt.close(fig)
