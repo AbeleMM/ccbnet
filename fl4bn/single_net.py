@@ -2,6 +2,7 @@ from typing import cast
 
 import networkx as nx
 from model import Model, var_elim
+from pgmpy.base import DAG
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -38,4 +39,4 @@ class SingleNet(Model, BayesianNetwork):
                 nx.has_path(self, v, u):
             raise ValueError(("Loops are not allowed. Adding the edge from"
                               f"({u} -> {v}) forms a loop."))
-        super().add_edge(u, v, **kwargs)
+        super(DAG, self).add_edge(u, v, **kwargs)

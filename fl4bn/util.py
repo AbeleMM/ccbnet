@@ -166,8 +166,8 @@ def benchmark_single(
     # for method in CombineMethod:
     #     name_to_bn[method.value] = combine_bns(trained_models, method)
 
-    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI)
-    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION)
+    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, False)
+    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, False)
 
     name_to_bn["Decentralized"] = combine(trained_models)
 
