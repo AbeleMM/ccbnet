@@ -6,8 +6,8 @@ from writer import OutTarget, Writer
 
 def main() -> None:
     writer = Writer(OutTarget.NONE)
-    nets = ["sachs"]
-    client_counts = [4]
+    nets = ["asia", "sachs", "child", "alarm", "insurance", "win95pts"]
+    client_counts = [2, 4, 8]
     for net_name in nets:
         model = get_example_model(net_name)
         model.name = net_name
@@ -15,10 +15,10 @@ def main() -> None:
             res = benchmark_multi(
                 ref_model=model,
                 nr_clients=client_count,
-                overlap_ratios=np.arange(0.0, 0.6, 0.1).tolist(),
+                overlap_ratios=[0.1, 0.3, 0.6],
                 samples_factor=500,
                 test_counts=2000,
-                include_learnt=True,
+                include_learnt=False,
                 in_out_inf_vars=True,
                 rand_inf_vars=True,
                 r_seed=42

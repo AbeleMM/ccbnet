@@ -169,15 +169,15 @@ def benchmark_single(
     # for method in CombineMethod:
     #     name_to_bn[method.value] = combine_bns(trained_models, method)
 
-    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, False,
-                                        CombineOp.GEO_MEAN)
-    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, False,
+    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, True,
+                                        CombineOp.SUPERPOS)
+    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, True,
                                       CombineOp.GEO_MEAN)
 
     name_to_bn["Decentralized"] = combine(trained_models)
 
-    name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.ARITH)
-    name_to_bn["ProdOuts"] = ProdOuts(trained_models)
+    name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.GEO)
+    # name_to_bn["ProdOuts"] = ProdOuts(trained_models)
 
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)
