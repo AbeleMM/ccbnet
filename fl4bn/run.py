@@ -1,10 +1,10 @@
 from typing import cast
 
 import numpy as np
+from experiment import BENCHMARK_PIVOT_COL, ExpWriter, benchmark_multi
 from matplotlib.axes import Axes
 from matplotlib.container import BarContainer
 from pgmpy.utils import get_example_model
-from util import BENCHMARK_PIVOT_COL, ExpWriter, benchmark_multi
 
 
 def plot_model_results(
@@ -42,10 +42,9 @@ def plot_model_results(
 
 
 def main() -> None:
-    exp_writer = ExpWriter()
+    exp_writer = None
     nets = [
-        "asia", "cancer", "earthquake", "sachs", "survey",
-        "alarm", "child", "insurance", "water"
+        "sachs"
     ]
     for net_name in nets:
         plot_model_results(net_name, exp_writer)
