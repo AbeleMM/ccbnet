@@ -203,7 +203,6 @@ def benchmark_multi(
         in_out_inf_vars=True,
         rand_inf_vars=True,
         r_seed: int | None = None) -> dict[str, pd.DataFrame]:
-    sampling = BayesianModelSampling(ref_model)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
@@ -216,23 +215,24 @@ def benchmark_multi(
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
+
+        all_samples = BayesianModelSampling(ref_model).forward_sample(
+            size=samples_per_client * nr_clients + test_counts,
+            seed=r_seed,
+            show_progress=False
+        )
+
         clients_train_samples = [
-            sampling.forward_sample(
-                size=samples_per_client,
-                seed=r_seed,
-                show_progress=False
-            )
-            for _ in range(nr_clients)
+            all_samples[i * samples_per_client:(i + 1) * samples_per_client]
+            for i in range(nr_clients)
         ]
-        (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
-        test_samples = cast(list[dict[str, str]], sampling.forward_sample(
-            size=test_counts, seed=r_seed, show_progress=False).to_dict(orient="records"))
-
-        rand = Random(r_seed)
+        test_samples = cast(list[dict[str, str]],
+                            all_samples[-test_counts:].to_dict(orient="records"))
 
         scen_to_test_insts["mix"] = []
         scen_to_q_vars["mix"] = []
+        rand = Random(r_seed)
 
         for test_sample in test_samples:
             evid = rand.sample(ref_model.nodes(), round(0.2 * len(ref_model)))
@@ -255,6 +255,8 @@ def benchmark_multi(
         #     scen_to_q_vars["rand"] = query_vars
         #     scen_to_test_insts["rand"] = cast(
         #         list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
+
+        (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
