@@ -118,16 +118,16 @@ def get_inf_res(
         samples: list[dict[str, str]],
         q_vars: list[str]) -> tuple[list[DiscreteFactor], float]:
     facts: list[DiscreteFactor] = []
-    total_time = 0.0
+    tot_time = 0.0
 
     for i, row in tqdm(enumerate(samples)):
         start = perf_counter_ns()
         query = source.query([q_vars[i]], row)
 
-        total_time += perf_counter_ns() - start
+        tot_time += perf_counter_ns() - start
         facts.append(query)
 
-    return facts, total_time
+    return facts, tot_time
 
 
 def calc_brier(
@@ -151,16 +151,14 @@ def calc_brier(
 
 
 def benchmark_single(
-        ref_model: BayesianNetwork,
+        ref_facts: list[DiscreteFactor],
+        tot_ref_time: float,
         trained_models: list[BayesianNetwork],
         test_samples: list[dict[str, str]],
         query_vars: list[str],
         learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
     name_to_bn: dict[str, Model] = {}
-    ref_facts, total_ref_time = get_inf_res(SingleNet.from_bn(ref_model), test_samples, query_vars)
-
-    LOGGER.info("Benchmarking round started")
 
     if learnt_model:
         name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
@@ -180,11 +178,11 @@ def benchmark_single(
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        pred_facts, total_pred_time = get_inf_res(model, test_samples, query_vars)
+        pred_facts, tot_pred_time = get_inf_res(model, test_samples, query_vars)
 
         row["Brier"] = round(calc_brier(ref_facts, pred_facts), 3)
 
-        row["RelTotTime"] = round(total_pred_time / total_ref_time, 2)
+        row["RelTotTime"] = round(tot_pred_time / tot_ref_time, 2)
 
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 
@@ -212,6 +210,7 @@ def benchmark_multi(
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
     scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
+    scen_to_ref: dict[str, tuple[list[DiscreteFactor], float]] = {}
     # if in_out_inf_vars:
     #     scen_to_df["inout"] = pd.DataFrame()
     # if rand_inf_vars:
@@ -273,21 +272,27 @@ def benchmark_multi(
         else:
             learnt_model = None
 
+        for scen in scen_to_df:
+            LOGGER.info("Getting reference results for scenario %s", scen)
+            scen_to_ref[scen] = get_inf_res(SingleNet.from_bn(ref_model),
+                                            scen_to_test_insts[scen], scen_to_q_vars[scen])
+
         for overlap in overlap_ratios:
             LOGGER.info("Overlap %s", overlap)
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
 
+            LOGGER.info("Training models")
             trained_models = [
                 train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ]
 
-            LOGGER.info("Trained models")
-
             for scen, d_f in scen_to_df.items():
-                res_single = benchmark_single(
-                    ref_model, trained_models, scen_to_test_insts[scen], scen_to_q_vars[scen],
-                    learnt_model if not overlap else None)
+                LOGGER.info("Scenario %s", scen)
+                ref_facts, tot_ref_time = scen_to_ref[scen]
+                res_single = benchmark_single(ref_facts, tot_ref_time, trained_models,
+                                              scen_to_test_insts[scen], scen_to_q_vars[scen],
+                                              learnt_model if not overlap else None)
                 res_single[_BENCHMARK_INDEX] = round(overlap, 1)
                 scen_to_df[scen] = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 
