@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Collection
 from typing import cast
 
 import networkx as nx
@@ -39,7 +40,7 @@ class Model(ABC):
 
 
 def var_elim(targets: list[str], evidence: dict[str, str], facts: list[DiscreteFactor],
-             nodes: list[str], no_marg_nodes: set[str]) -> DiscreteFactor:
+             nodes: Collection[str]) -> DiscreteFactor:
     node_to_facts: dict[str, list[DiscreteFactor]] = defaultdict(list)
 
     for fact in facts:
@@ -56,8 +57,7 @@ def var_elim(targets: list[str], evidence: dict[str, str], facts: list[DiscreteF
         for rel_fact in rel_facts:
             prod_rel_facts.product(rel_fact, inplace=True)
 
-        if node not in no_marg_nodes:
-            prod_rel_facts.marginalize([node], inplace=True)
+        prod_rel_facts.marginalize([node], inplace=True)
 
         for node, node_facts in node_to_facts.items():
             node_to_facts[node] = [fact for fact in node_facts if fact not in rel_facts]

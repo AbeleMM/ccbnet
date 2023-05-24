@@ -27,7 +27,7 @@ class SingleNet(Model, BayesianNetwork):
                 inplace=False, show_warnings=True))
             for cpd in cast(list[TabularCPD], self.get_cpds())]
 
-        return var_elim(targets, evidence, facts, list(self.nodes()), set())
+        return var_elim(targets, evidence, facts, self.nodes())
 
     def as_dig(self) -> nx.DiGraph:
         return self

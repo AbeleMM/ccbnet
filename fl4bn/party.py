@@ -31,7 +31,7 @@ class Party(Model):
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
         self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
-        self.no_marg_nodes: set[str]
+        self.no_marg_nodes: list[str]
         self.tmp_vals: npt.NDArray[np.float_]
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
@@ -49,12 +49,12 @@ class Party(Model):
                 )
                 for cpd in party.node_to_cpd.values()
             ]
-            facts.append(var_elim(targets, evidence,
-                                  party_facts, list(party.node_to_cpd), party.no_marg_nodes))
+            facts.append(var_elim(targets + party.no_marg_nodes, evidence,
+                                  party_facts, party.node_to_cpd))
 
         nodes: list[str] = list(set(var for factor in facts for var in factor.variables))
 
-        return var_elim(targets, evidence, facts, nodes, set())
+        return var_elim(targets, evidence, facts, nodes)
 
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()
@@ -145,8 +145,8 @@ class Party(Model):
                 party.set_combined_cpd(node, column_sums, parents_union, node_to_states)
                 party.mark_overlap_solved(node)
 
-        self.no_marg_nodes = set(
-            v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables)
+        self.no_marg_nodes = sorted(set(
+            v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables))
 
     def get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
         return sorted(set().union(*[party.local_bn.get_parents(node) for party in parties]))

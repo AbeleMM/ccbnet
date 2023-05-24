@@ -18,7 +18,6 @@ from pgmpy.estimators import BayesianEstimator, HillClimbSearch
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
-from prod_outs import ProdOuts
 from single_net import SingleNet
 from tqdm import tqdm
 
@@ -172,7 +171,6 @@ def benchmark_single(
     name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, True,
                                       CombineOp.GEO_MEAN)
     name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.GEO)
-    # name_to_bn["ProdOuts"] = ProdOuts(trained_models)
     name_to_bn["Decentralized"] = combine(trained_models)
 
     for name, model in name_to_bn.items():
