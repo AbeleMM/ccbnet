@@ -58,8 +58,8 @@ def var_elim(targets: list[str], evidence: dict[str, str], factors: list[Discret
         prod_rel_facts = cast(DiscreteFactor, factor_product(*rel_facts))
         prod_rel_facts.marginalize([node], inplace=True)
 
-        for node, node_facts in node_to_facts.items():
-            node_to_facts[node] = [fact for fact in node_facts if fact not in rel_facts]
+        for node_, node_facts in node_to_facts.items():
+            node_to_facts[node_] = [fact for fact in node_facts if fact not in rel_facts]
 
         for prf_var in cast(list[str], prod_rel_facts.variables):
             node_to_facts[prf_var].append(prod_rel_facts)
