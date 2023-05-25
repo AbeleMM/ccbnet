@@ -149,6 +149,17 @@ def calc_brier(
     return acc / len(ref_facts)
 
 
+def calc_brier_alt(
+        ref_facts: list[DiscreteFactor],
+        pred_facts: list[DiscreteFactor]) -> float:
+    # Assumes variables, cardinality & state_names fields are equal between all factor pairs.
+    acc = sum(
+        cast(float, np.sum((ref_fact.values - pred_facts[i].values) ** 2))
+        for i, ref_fact in enumerate(ref_facts))
+
+    return acc / len(ref_facts)
+
+
 def benchmark_single(
         ref_facts: list[DiscreteFactor],
         tot_ref_time: float,
