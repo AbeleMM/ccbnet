@@ -6,6 +6,7 @@ from typing import cast
 import networkx as nx
 import numpy as np
 import numpy.typing as npt
+from pgmpy.factors import factor_product
 from pgmpy.factors.discrete import DiscreteFactor
 
 
@@ -39,9 +40,11 @@ class Model(ABC):
         return dict(assignment)
 
 
-def var_elim(targets: list[str], evidence: dict[str, str], facts: list[DiscreteFactor],
+def var_elim(targets: list[str], evidence: dict[str, str], factors: list[DiscreteFactor],
              nodes: Collection[str]) -> DiscreteFactor:
     node_to_facts: dict[str, list[DiscreteFactor]] = defaultdict(list)
+
+    facts = factors.copy()
 
     for fact in facts:
         for node in cast(list[str], fact.variables):
@@ -50,13 +53,9 @@ def var_elim(targets: list[str], evidence: dict[str, str], facts: list[DiscreteF
     for node in sorted(n for n in nodes if n not in evidence and n not in targets):
         rel_facts = node_to_facts[node].copy()
 
-        facts = [factor for factor in facts if factor not in rel_facts]
+        facts = [fact for fact in facts if fact not in rel_facts]
 
-        prod_rel_facts = DiscreteFactor([], [], [1])
-
-        for rel_fact in rel_facts:
-            prod_rel_facts.product(rel_fact, inplace=True)
-
+        prod_rel_facts = cast(DiscreteFactor, factor_product(*rel_facts))
         prod_rel_facts.marginalize([node], inplace=True)
 
         for node, node_facts in node_to_facts.items():
@@ -67,11 +66,7 @@ def var_elim(targets: list[str], evidence: dict[str, str], facts: list[DiscreteF
 
         facts.append(prod_rel_facts)
 
-    prod_facts = DiscreteFactor([], [], [1])
-
-    for fact in facts:
-        prod_facts.product(fact, inplace=True)
-
+    prod_facts = cast(DiscreteFactor, factor_product(*facts))
     prod_facts.normalize(inplace=True)
 
     return prod_facts
