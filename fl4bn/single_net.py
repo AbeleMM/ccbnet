@@ -10,6 +10,7 @@ class SingleNet(Model, BayesianNetwork):
     def __init__(self, allow_loops: bool) -> None:
         super().__init__()
         self.allow_loops = allow_loops
+        self.node_to_fact: dict[str, DiscreteFactor] = {}
 
     @classmethod
     def from_bn(cls, bayes_net: BayesianNetwork, allow_loops=False) -> "SingleNet":
@@ -21,10 +22,10 @@ class SingleNet(Model, BayesianNetwork):
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
         facts = [
-            cast(DiscreteFactor, cpd.to_factor().reduce(
-                [(var, evidence[var]) for var in cpd.variables if var in evidence],
+            cast(DiscreteFactor, fact.reduce(
+                [(var, evidence[var]) for var in fact.variables if var in evidence],
                 inplace=False, show_warnings=True))
-            for cpd in cast(list[TabularCPD], self.get_cpds())]
+            for fact in self.node_to_fact.values()]
 
         return var_elim(targets, evidence, facts, self.nodes())
 
@@ -39,3 +40,7 @@ class SingleNet(Model, BayesianNetwork):
             raise ValueError(("Loops are not allowed. Adding the edge from"
                               f"({u} -> {v}) forms a loop."))
         super(BayesianNetwork, self).add_edge(u, v, **kwargs)
+
+    def add_cpds(self, *cpds: TabularCPD) -> None:
+        super().add_cpds(*cpds)
+        self.node_to_fact.update((cpd.variable, cpd.to_factor()) for cpd in cpds)

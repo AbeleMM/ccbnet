@@ -162,14 +162,17 @@ def _get_superposition(l_val: float, r_val: float) -> float:
 
 def _get_ext_node_values(
         node: str, parents_union: list[str],
-        node_to_vals: dict[str, list], node_bns: list[BayesianNetwork],
+        node_to_vals: dict[str, list[int | str]], node_bns: list[BayesianNetwork],
         combine_op: CombineOp) -> npt.NDArray[np.float_]:
     nr_node_vals: int = len(node_to_vals[node])
     transp_table: list[list[float]] = []
 
     for parent_inst in itertools.product(*[node_to_vals[parent] for parent in parents_union]):
-        # tt_row: list[float] = [0] * nr_node_vals
-        tt_row: list[float] = [1] * nr_node_vals
+        match combine_op:
+            case CombineOp.SUPERPOS | CombineOp.ARITH_MEAN:
+                tt_row: list[float] = [0] * nr_node_vals
+            case CombineOp.GEO_MEAN:
+                tt_row: list[float] = [1] * nr_node_vals
         for bayes_net in node_bns:
             cpd: TabularCPD = cast(TabularCPD, bayes_net.get_cpds(node)).copy()
             cpd.reduce(

@@ -23,7 +23,7 @@ class AvgOuts(Model):
         node_to_nr_facts: defaultdict[str, int] = defaultdict(int)
 
         for net in self.nets:
-            node_to_fact = net.disjoint_query(sorted(set(net.nodes()) & set(targets)), evidence)
+            node_to_fact = net.disjoint_query([t for t in targets if t in net.nodes()], evidence)
             for node, node_fact in node_to_fact.items():
                 if node in node_to_avg_fact:
                     match self.mean_type:

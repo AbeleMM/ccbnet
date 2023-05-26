@@ -27,6 +27,7 @@ class Party(Model):
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
+        self.node_to_fact = {node: cpd.to_factor() for node, cpd in self.node_to_cpd.items()}
         self.parties: list[Party] = []
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
@@ -41,13 +42,13 @@ class Party(Model):
             party_facts = [
                 cast(
                     DiscreteFactor,
-                    cpd.to_factor().reduce(
-                        [(var, evidence[var]) for var in cpd.variables if var in evidence],
+                    fact.reduce(
+                        [(var, evidence[var]) for var in fact.variables if var in evidence],
                         inplace=False,
                         show_warnings=False
                     )
                 )
-                for cpd in party.node_to_cpd.values()
+                for fact in party.node_to_fact.values()
             ]
             facts.append(var_elim(targets + party.no_marg_nodes, evidence,
                                   party_facts, party.node_to_cpd))
@@ -130,7 +131,7 @@ class Party(Model):
                 party.set_vals_ret_enc(node, nr_parties, node_to_states, context)
                 for party in neighbors
             ]
-            column_sums: list[float] = self.calc_col_ips(enc_cols_parties, nr_parties)
+            column_sums: list[float] = self.calc_col_inner_prods(enc_cols_parties, nr_parties)
 
             party_unmixed_shares = [
                 party.share_values(party.tmp_vals, len(overlap_parties))
@@ -161,7 +162,7 @@ class Party(Model):
                     continue
                 node_to_val_dict[node].update(dict.fromkeys(party.local_bn.states[node], None))
 
-        return {node: list(values_dict.keys()) for node, values_dict in node_to_val_dict.items()}
+        return {node: list(values_dict) for node, values_dict in node_to_val_dict.items()}
 
     def gen_context(self, nr_parties: int, nr_states: int) -> ts.Context:
         aux = nr_states.bit_length()  # prec before dec point & inner/outer bits diff
@@ -188,7 +189,7 @@ class Party(Model):
         self.tmp_vals = values.transpose()
         return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
-    def calc_col_ips(
+    def calc_col_inner_prods(
             self, enc_cols_parties: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],
             nr_parties: int) -> list[float]:
         col_ips: list[float] = []
@@ -218,6 +219,7 @@ class Party(Model):
             state_names=node_to_states
         )
         self.node_to_cpd[cpd.variable] = cpd
+        self.node_to_fact[cpd.variable] = cpd.to_factor()
 
     def get_expanded_values(
             self, node: str, node_to_states: dict[str, list[str]]) -> npt.NDArray[np.float_]:
