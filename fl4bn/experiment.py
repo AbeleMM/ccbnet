@@ -41,7 +41,8 @@ def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
     # Island nodes are not included in neither the in, nor the out list.
     in_nodes: list[str] = []
     out_nodes: list[str] = []
-    edges_to, edges_from = [set(edge_list) for edge_list in zip(*bayes_net.edges())]
+    edges_to, edges_from = [
+        set(cast(list[str], edge_list)) for edge_list in zip(*bayes_net.edges())]
 
     for node in cast(Collection[str], bayes_net.nodes()):
         if node not in edges_to and node in edges_from:
@@ -277,7 +278,8 @@ def benchmark_multi(
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
-            learnt_model = train_model(samples, max_in_deg, ref_model.states)
+            learnt_model = cast(BayesianNetwork,
+                                train_model(samples, max_in_deg, ref_model.states))
         else:
             learnt_model = None
 
@@ -291,10 +293,10 @@ def benchmark_multi(
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
 
             LOGGER.info("Training models")
-            trained_models = [
+            trained_models = cast(list[BayesianNetwork], [
                 train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
-            ]
+            ])
 
             for scen, d_f in scen_to_df.items():
                 LOGGER.info("Scenario %s", scen)
