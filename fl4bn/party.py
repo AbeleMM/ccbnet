@@ -1,6 +1,6 @@
 import itertools
 from collections import defaultdict
-from typing import cast
+from typing import Collection, cast
 
 import networkx as nx
 import numpy as np
@@ -21,10 +21,11 @@ MIN_VAL = 1e-3
 
 
 class Party(Model):
-    def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
+    def __init__(self, identifier: int, local_bn: BayesianNetwork, split_ov: bool) -> None:
         super().__init__()
         self.identifier = identifier
         self.local_bn = local_bn
+        self.split_ov = split_ov
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
@@ -33,7 +34,7 @@ class Party(Model):
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
         self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
-        self.no_marg_nodes: list[str]
+        self.no_marg_nodes: list[str] = []
         self.tmp_vals: npt.NDArray[np.float_]
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
@@ -146,12 +147,19 @@ class Party(Model):
                 for share in shares:
                     overlap_parties[i].tmp_vals = overlap_parties[i].tmp_vals * share
 
-            for party in overlap_parties:
-                party.set_combined_cpd(node, column_sums, parents_union, node_to_states)
-                party.mark_overlap_solved(node)
+            if self.split_ov:
+                for party in overlap_parties:
+                    cpd = party.get_combined_cpd(node, column_sums, parents_union, node_to_states)
+                    party.mark_overlap_solved(node, node_to_states, cpd)
+            else:
+                cpd = self.get_combined_cpd(node, column_sums, parents_union, node_to_states)
+                for party in neighbors:
+                    cpd.values *= party.get_combined_cpd(
+                        node, column_sums, parents_union, node_to_states).values
+                    party.mark_overlap_solved(node, node_to_states, None)
+                self.mark_overlap_solved(node, node_to_states, cpd)
 
-        self.no_marg_nodes = sorted(set(
-            v for n in self.node_to_neighbors for v in self.node_to_cpd[n].variables))
+        self.no_marg_nodes = sorted(set(self.no_marg_nodes))
 
     def get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
         return sorted(set().union(*[party.local_bn.get_parents(node) for party in parties]))
@@ -210,11 +218,11 @@ class Party(Model):
 
         return col_ips
 
-    def set_combined_cpd(
+    def get_combined_cpd(
             self, node: str, column_sums: list[float],
-            parents_union: list[str], node_to_states: dict[str, list[str]]) -> None:
+            parents_union: list[str], node_to_states: dict[str, list[str]]) -> TabularCPD:
         values = np.array([v / column_sums[i] for i, v in enumerate(self.tmp_vals)]).transpose()
-        cpd = TabularCPD(
+        return TabularCPD(
             variable=node,
             variable_card=len(node_to_states[node]),
             values=values,
@@ -222,8 +230,6 @@ class Party(Model):
             evidence_card=[len(node_to_states[p]) for p in parents_union],
             state_names=node_to_states
         )
-        self.node_to_cpd[cpd.variable] = cpd
-        self.node_to_fact[cpd.variable] = cpd.to_factor()
 
     def get_expanded_values(
             self, node: str, node_to_states: dict[str, list[str]]) -> npt.NDArray[np.float_]:
@@ -263,12 +269,21 @@ class Party(Model):
 
         return shares
 
-    def mark_overlap_solved(self, node: str) -> None:
+    def mark_overlap_solved(self, node: str, ov_nodes: Collection[str],
+                            cpd: TabularCPD | None) -> None:
         self.solved_overlaps.add(node)
+        self.no_marg_nodes.extend(ov_nodes)
+
+        if cpd:
+            self.node_to_cpd[cpd.variable] = cpd
+            self.node_to_fact[cpd.variable] = cpd.to_factor()
+        else:
+            del self.node_to_cpd[node]
+            del self.node_to_fact[node]
 
 
-def combine(bns: list[BayesianNetwork]) -> Party:
-    parties = [Party(i, bn) for i, bn in enumerate(bns)]
+def combine(bns: list[BayesianNetwork], split_ov=True) -> Party:
+    parties = [Party(i, bn, split_ov) for i, bn in enumerate(bns)]
 
     for party in parties:
         party.add_party(parties)

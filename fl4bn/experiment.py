@@ -185,7 +185,8 @@ def benchmark_single(
     name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, True,
                                       CombineOp.GEO_MEAN)
     name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.GEO)
-    name_to_bn["Decentralized"] = combine(trained_models)
+    name_to_bn["Decentralized"] = combine(trained_models, True)
+    name_to_bn["Decentralized - Compact"] = combine(trained_models, False)
 
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)
