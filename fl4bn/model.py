@@ -12,6 +12,10 @@ from pgmpy.factors.discrete import DiscreteFactor
 
 class Model(ABC):
     @abstractmethod
+    def __init__(self) -> None:
+        self.last_nr_comm_vals = 0
+
+    @abstractmethod
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
         ...
 

@@ -8,7 +8,8 @@ from pgmpy.models import BayesianNetwork
 
 class SingleNet(Model, BayesianNetwork):
     def __init__(self, allow_loops: bool) -> None:
-        super().__init__()
+        Model.__init__(self)
+        BayesianNetwork.__init__(self)
         self.allow_loops = allow_loops
         self.node_to_fact: dict[str, DiscreteFactor] = {}
 

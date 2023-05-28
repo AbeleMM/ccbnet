@@ -22,6 +22,7 @@ MIN_VAL = 1e-3
 
 class Party(Model):
     def __init__(self, identifier: int, local_bn: BayesianNetwork) -> None:
+        super().__init__()
         self.identifier = identifier
         self.local_bn = local_bn
         self.node_to_cpd: dict[str, TabularCPD] = {
@@ -37,6 +38,7 @@ class Party(Model):
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
         facts: list[DiscreteFactor] = []
+        self.last_nr_comm_vals = 0
 
         for party in [cast(Party, self), *self.parties]:
             party_facts = [
@@ -50,8 +52,10 @@ class Party(Model):
                 )
                 for fact in party.node_to_fact.values()
             ]
-            facts.append(var_elim(targets + party.no_marg_nodes, evidence,
-                                  party_facts, party.node_to_cpd))
+            res_fact = var_elim(targets + party.no_marg_nodes, evidence,
+                                party_facts, party.node_to_cpd)
+            facts.append(res_fact)
+            self.last_nr_comm_vals += res_fact.values.size
 
         nodes: list[str] = list(set(var for factor in facts for var in factor.variables))
 

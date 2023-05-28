@@ -116,9 +116,10 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, li
 def get_inf_res(
         source: Model,
         samples: list[dict[str, str]],
-        q_vars: list[str]) -> tuple[list[DiscreteFactor], float]:
+        q_vars: list[str]) -> tuple[list[DiscreteFactor], float, float]:
     facts: list[DiscreteFactor] = []
     tot_time = 0.0
+    sum_comm_vals = 0
 
     for i, row in tqdm(enumerate(samples)):
         start = perf_counter_ns()
@@ -126,8 +127,9 @@ def get_inf_res(
 
         tot_time += perf_counter_ns() - start
         facts.append(query)
+        sum_comm_vals += source.last_nr_comm_vals
 
-    return facts, tot_time
+    return facts, tot_time, sum_comm_vals / len(samples)
 
 
 def calc_brier(
@@ -188,11 +190,13 @@ def benchmark_single(
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        pred_facts, tot_pred_time = get_inf_res(model, test_samples, query_vars)
+        pred_facts, tot_pred_time, avg_comm_vals = get_inf_res(model, test_samples, query_vars)
 
         row["Brier"] = round(calc_brier(ref_facts, pred_facts), 3)
 
         row["RelTotTime"] = round(tot_pred_time / tot_ref_time, 2)
+
+        row["AvgCommVals"] = avg_comm_vals
 
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 
@@ -220,7 +224,7 @@ def benchmark_multi(
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
     scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
-    scen_to_ref: dict[str, tuple[list[DiscreteFactor], float]] = {}
+    scen_to_ref: dict[str, tuple[list[DiscreteFactor], float, float]] = {}
     # if in_out_inf_vars:
     #     scen_to_df["inout"] = pd.DataFrame()
     # if rand_inf_vars:
@@ -300,7 +304,7 @@ def benchmark_multi(
 
             for scen, d_f in scen_to_df.items():
                 LOGGER.info("Scenario %s", scen)
-                ref_facts, tot_ref_time = scen_to_ref[scen]
+                ref_facts, tot_ref_time, _ = scen_to_ref[scen]
                 res_single = benchmark_single(ref_facts, tot_ref_time, trained_models,
                                               scen_to_test_insts[scen], scen_to_q_vars[scen],
                                               learnt_model if not overlap else None)

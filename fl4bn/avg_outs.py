@@ -15,12 +15,14 @@ class MeanType(Enum):
 
 class AvgOuts(Model):
     def __init__(self, bayes_nets: list[BayesianNetwork], mean_type=MeanType.ARITH) -> None:
+        super().__init__()
         self.nets = [SingleNet.from_bn(bn, False) for bn in bayes_nets]
         self.mean_type = mean_type
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
         node_to_avg_fact: dict[str, DiscreteFactor] = {}
         node_to_nr_facts: defaultdict[str, int] = defaultdict(int)
+        self.last_nr_comm_vals = 0
 
         for net in self.nets:
             node_to_fact = net.disjoint_query([t for t in targets if t in net.nodes()], evidence)
@@ -34,6 +36,7 @@ class AvgOuts(Model):
                 else:
                     node_to_avg_fact[node] = node_fact
                 node_to_nr_facts[node] += 1
+                self.last_nr_comm_vals += node_fact.values.size
 
         res = DiscreteFactor([], [], [1])
 

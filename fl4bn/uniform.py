@@ -6,6 +6,7 @@ from pgmpy.models import BayesianNetwork
 
 class Uniform(Model):
     def __init__(self, bns: list[BayesianNetwork]) -> None:
+        super().__init__()
         self.states: dict[str, list[str]] = {}
         for bayes_net in bns:
             self.states.update(bayes_net.states)
