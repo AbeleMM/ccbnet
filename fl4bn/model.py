@@ -73,7 +73,10 @@ def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> \
         facts = new_facts
         facts.append(prod_rel_facts)
 
-    prod_facts = cast(DiscreteFactor, factor_product(*facts))
+    try:
+        prod_facts = cast(DiscreteFactor, factor_product(*facts))
+    except NotImplementedError:
+        prod_facts = DiscreteFactor([], [], 1)
     prod_facts.normalize(inplace=True)
 
     return prod_facts
