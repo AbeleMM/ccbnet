@@ -53,14 +53,16 @@ class Party(Model):
                 )
                 for fact in party.node_to_fact.values()
             ]
-            res_fact = var_elim(targets + party.no_marg_nodes, evidence,
-                                party_facts, party.node_to_cpd)
+            discard: set[str] = set().union(targets, party.no_marg_nodes, evidence)
+            nodes = set(n for n in party.node_to_cpd if n not in discard)
+            res_fact = var_elim(party_facts, nodes)
             facts.append(res_fact)
             self.last_nr_comm_vals += res_fact.values.size
 
-        nodes: list[str] = list(set(var for factor in facts for var in factor.variables))
+        nodes: set[str] = set(
+            var for factor in facts for var in factor.variables if var not in targets)
 
-        return var_elim(targets, evidence, facts, nodes)
+        return var_elim(facts, nodes)
 
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()

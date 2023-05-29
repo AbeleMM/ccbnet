@@ -27,8 +27,10 @@ class SingleNet(Model, BayesianNetwork):
                 [(var, evidence[var]) for var in fact.variables if var in evidence],
                 inplace=False, show_warnings=True))
             for fact in self.node_to_fact.values()]
+        discard: set[str] = set().union(targets, evidence)
+        nodes: set[str] = set(n for n in self.nodes() if n not in discard)
 
-        return var_elim(targets, evidence, facts, self.nodes())
+        return var_elim(facts, nodes)
 
     def as_dig(self) -> nx.DiGraph:
         return self

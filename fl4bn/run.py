@@ -1,4 +1,3 @@
-import numpy as np
 from experiment import benchmark_multi
 from pgmpy.utils import get_example_model
 from writer import OutTarget, Writer

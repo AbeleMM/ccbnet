@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from collections.abc import Collection
+from operator import itemgetter
 from typing import cast
 
 import networkx as nx
@@ -44,11 +44,21 @@ class Model(ABC):
         return dict(assignment)
 
 
-def var_elim(targets: list[str], evidence: dict[str, str], factors: list[DiscreteFactor],
-             nodes: Collection[str]) -> DiscreteFactor:
+def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> \
+        DiscreteFactor:
     facts = factors.copy()
+    remaining_nodes = set(nodes)
 
-    for node in sorted(n for n in nodes if n not in evidence and n not in targets):
+    while remaining_nodes:
+        node_to_parties: dict[str, int] = {}
+        for fact in facts:
+            for var in fact.variables:
+                if var not in remaining_nodes:
+                    continue
+                node_to_parties[var] = node_to_parties.get(var, 1) * fact.values.size
+        node, _ = min(node_to_parties.items(), key=itemgetter(1, 0))
+        remaining_nodes.remove(node)
+
         rel_facts: list[DiscreteFactor] = []
         new_facts: list[DiscreteFactor] = []
 
