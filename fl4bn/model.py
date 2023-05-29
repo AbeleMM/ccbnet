@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from collections.abc import Collection
 from operator import itemgetter
 from typing import cast
 
@@ -44,19 +43,18 @@ class Model(ABC):
         return dict(assignment)
 
 
-def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> \
-        DiscreteFactor:
+def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> DiscreteFactor:
     facts = factors.copy()
     remaining_nodes = set(nodes)
 
     while remaining_nodes:
-        node_to_parties: dict[str, int] = {}
+        node_to_size_bound: dict[str, int] = {}
         for fact in facts:
             for var in fact.variables:
                 if var not in remaining_nodes:
                     continue
-                node_to_parties[var] = node_to_parties.get(var, 1) * fact.values.size
-        node, _ = min(node_to_parties.items(), key=itemgetter(1, 0))
+                node_to_size_bound[var] = node_to_size_bound.get(var, 1) * fact.values.size
+        node, _ = min(node_to_size_bound.items(), key=itemgetter(1, 0))
         remaining_nodes.remove(node)
 
         rel_facts: list[DiscreteFactor] = []
@@ -68,10 +66,10 @@ def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> \
             else:
                 new_facts.append(fact)
 
-        prod_rel_facts = cast(DiscreteFactor, factor_product(*rel_facts))
-        prod_rel_facts.marginalize([node], inplace=True)
+        prod_facts = cast(DiscreteFactor, factor_product(*rel_facts))
+        prod_facts.marginalize([node], inplace=True)
         facts = new_facts
-        facts.append(prod_rel_facts)
+        facts.append(prod_facts)
 
     try:
         prod_facts = cast(DiscreteFactor, factor_product(*facts))

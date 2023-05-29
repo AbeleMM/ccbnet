@@ -53,7 +53,7 @@ class Writer():
             fig = axes.get_figure()
             fig.savefig(
                 str((self.res_dir / f"{net_clients_str}_{metric}").with_suffix(
-                f".{self.out_target.value}")),
+                    f".{self.out_target.value}")),
                 bbox_inches="tight"
             )
             plt.close(fig)

@@ -173,6 +173,7 @@ def benchmark_single(
         learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
     name_to_bn: dict[str, Model] = {}
+    LOGGER.info("Constructing approach instances")
 
     if learnt_model:
         name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
@@ -198,7 +199,7 @@ def benchmark_single(
 
         row["RelTotTime"] = round(tot_pred_time / ref_out.tot_time, 2)
 
-        row["AvgCommVals"] = avg_comm_vals
+        row["AvgCommVals"] = round(avg_comm_vals, 2)
 
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 

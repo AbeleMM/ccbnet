@@ -36,7 +36,7 @@ def combine_bns_weighted(
     if method is CombineMethod.MULTI:
         return _combine_bns_weighted_multi(bn_to_conf, allow_loops, combine_op)
 
-    node_to_bns: dict[str, list[BayesianNetwork]] = defaultdict(list)
+    node_to_bns: defaultdict[str, list[BayesianNetwork]] = defaultdict(list)
     node_to_vals: dict[str, list[int | str]] = {}
     bn_combined = SingleNet(allow_loops)
 
