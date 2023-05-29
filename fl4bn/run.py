@@ -18,12 +18,9 @@ def main() -> None:
                 samples_factor=500,
                 test_counts=2000,
                 include_learnt=False,
-                in_out_inf_vars=True,
-                rand_inf_vars=True,
                 r_seed=42
             )
-            for scenario, d_f in res.items():
-                writer.write(net_name, client_count, scenario, d_f)
+            writer.write(net_name, client_count, res)
 
 
 if __name__ == "__main__":

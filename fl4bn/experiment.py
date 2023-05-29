@@ -218,20 +218,10 @@ def benchmark_multi(
         samples_factor: int = 50000,
         test_counts: int = 2000,
         include_learnt=False,
-        in_out_inf_vars=True,
-        rand_inf_vars=True,
-        r_seed: int | None = None) -> dict[str, pd.DataFrame]:
+        r_seed: int | None = None) -> pd.DataFrame:
     LOGGER.info("%s %s", ref_model.name, nr_clients)
     samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
-    scen_to_df: dict[str, pd.DataFrame] = {}
-    scen_to_q_vars: dict[str, list[str]] = {}
-    scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
-    scen_to_ref: dict[str, TestOut] = {}
-    # if in_out_inf_vars:
-    #     scen_to_df["inout"] = pd.DataFrame()
-    # if rand_inf_vars:
-    #     scen_to_df["rand"] = pd.DataFrame()
-    scen_to_df["mix"] = pd.DataFrame()
+    d_f = pd.DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -241,45 +231,23 @@ def benchmark_multi(
             seed=r_seed,
             show_progress=False
         )
-
         clients_train_samples = [
             all_samples[i * samples_per_client:(i + 1) * samples_per_client]
             for i in range(nr_clients)
         ]
-
         LOGGER.info("Sampled")
-
         test_samples = cast(list[dict[str, str]],
                             all_samples[-test_counts:].to_dict(orient="records"))
-
-        scen_to_test_insts["mix"] = []
-        scen_to_q_vars["mix"] = []
+        test_insts: list[dict[str, str]] = []
+        q_vars: list[str] = []
         rand = Random(r_seed)
 
         for test_sample in test_samples:
             evid = rand.sample(ref_model.nodes(), round(0.2 * len(ref_model)))
-            scen_to_test_insts["mix"].append({k: test_sample[k] for k in evid})
-            scen_to_q_vars["mix"].append(
-                rand.choice([n for n in ref_model.nodes() if n not in evid]))
+            test_insts.append({k: test_sample[k] for k in evid})
+            q_vars.append(rand.choice([n for n in ref_model.nodes() if n not in evid]))
 
         LOGGER.info("Found evidence & queries for tests")
-
-        # if in_out_inf_vars:
-        #     evidence_vars, query_vars = get_in_out_nodes(ref_model)
-        #     scen_to_q_vars["inout"] = query_vars
-        #     scen_to_test_insts["inout"] = cast(
-        #         list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
-
-        # if rand_inf_vars:
-        #     rand = Random(r_seed)  # nosec
-        #     shuffled_nodes: list[str] = list(ref_model.nodes())
-        #     rand.shuffle(shuffled_nodes)
-        #     mid_ind = len(shuffled_nodes) // 2
-        #     evidence_vars, query_vars = shuffled_nodes[:mid_ind], shuffled_nodes[mid_ind:]
-        #     scen_to_q_vars["rand"] = query_vars
-        #     scen_to_test_insts["rand"] = cast(
-        #         list[dict[str, str]], test_samples[evidence_vars].to_dict(orient="records"))
-
         (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
 
         if include_learnt:
@@ -289,33 +257,25 @@ def benchmark_multi(
         else:
             learnt_model = None
 
-        for scen in scen_to_df:
-            LOGGER.info("Getting reference results for scenario %s", scen)
-            scen_to_ref[scen] = get_inf_res(SingleNet.from_bn(ref_model),
-                                            scen_to_test_insts[scen], scen_to_q_vars[scen])
+        LOGGER.info("Getting reference results")
+        ref_out = get_inf_res(SingleNet.from_bn(ref_model), test_insts, q_vars)
 
         for overlap in overlap_ratios:
             LOGGER.info("Overlap %s", overlap)
             clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
-
             LOGGER.info("Training models")
             trained_models = cast(list[BayesianNetwork], [
                 train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ])
+            res_single = benchmark_single(
+                ref_out, trained_models, test_insts, q_vars, learnt_model if not overlap else None)
+            res_single[_BENCHMARK_INDEX] = round(overlap, 1)
+            d_f = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 
-            for scen, d_f in scen_to_df.items():
-                LOGGER.info("Scenario %s", scen)
-                res_single = benchmark_single(scen_to_ref[scen], trained_models,
-                                              scen_to_test_insts[scen], scen_to_q_vars[scen],
-                                              learnt_model if not overlap else None)
-                res_single[_BENCHMARK_INDEX] = round(overlap, 1)
-                scen_to_df[scen] = pd.concat([d_f, res_single], ignore_index=True, copy=False)
+    d_f.set_index(_BENCHMARK_INDEX, inplace=True)
 
-    for d_f in scen_to_df.values():
-        d_f.set_index(_BENCHMARK_INDEX, inplace=True)
-
-    return scen_to_df
+    return d_f
 
 
 def _overlap_communities(

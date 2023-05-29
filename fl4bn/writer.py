@@ -26,8 +26,8 @@ class Writer():
             self.res_dir = Path(__file__).parents[1] / "out" / time_str
             self.res_dir.mkdir(parents=True, exist_ok=True)
 
-    def write(self, net_name: str, nr_clients: int, scenario: str, d_f: DataFrame) -> None:
-        net_clients_str = f"{net_name}_{nr_clients}_{scenario}"
+    def write(self, net_name: str, nr_clients: int, d_f: DataFrame) -> None:
+        net_clients_str = f"{net_name}_{nr_clients}"
         print(net_clients_str)
         print(d_f)
         match self.out_target:
