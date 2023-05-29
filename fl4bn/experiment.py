@@ -1,6 +1,6 @@
 import logging
 import warnings
-from collections import Counter
+from collections import Counter, namedtuple
 from pathlib import Path
 from random import Random
 from time import perf_counter_ns
@@ -27,6 +27,8 @@ BENCHMARK_PIVOT_COL: str = "Name"
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
                     level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
+TestOut = namedtuple("TestOut", ["res_facts", "tot_time", "avg_comm_vals"],
+                     defaults=[cast(list[str], []), 0.0, 0.0])
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -116,7 +118,7 @@ def train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, li
 def get_inf_res(
         source: Model,
         samples: list[dict[str, str]],
-        q_vars: list[str]) -> tuple[list[DiscreteFactor], float, float]:
+        q_vars: list[str]) -> TestOut:
     facts: list[DiscreteFactor] = []
     tot_time = 0.0
     sum_comm_vals = 0
@@ -129,7 +131,7 @@ def get_inf_res(
         facts.append(query)
         sum_comm_vals += source.last_nr_comm_vals
 
-    return facts, tot_time, sum_comm_vals / len(samples)
+    return TestOut(facts, tot_time, sum_comm_vals / len(samples))
 
 
 def calc_brier(
@@ -164,8 +166,7 @@ def calc_brier_alt(
 
 
 def benchmark_single(
-        ref_facts: list[DiscreteFactor],
-        tot_ref_time: float,
+        ref_out: TestOut,
         trained_models: list[BayesianNetwork],
         test_samples: list[dict[str, str]],
         query_vars: list[str],
@@ -193,9 +194,9 @@ def benchmark_single(
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_facts, tot_pred_time, avg_comm_vals = get_inf_res(model, test_samples, query_vars)
 
-        row["Brier"] = round(calc_brier(ref_facts, pred_facts), 3)
+        row["Brier"] = round(calc_brier(ref_out.res_facts, pred_facts), 3)
 
-        row["RelTotTime"] = round(tot_pred_time / tot_ref_time, 2)
+        row["RelTotTime"] = round(tot_pred_time / ref_out.tot_time, 2)
 
         row["AvgCommVals"] = avg_comm_vals
 
@@ -225,7 +226,7 @@ def benchmark_multi(
     scen_to_df: dict[str, pd.DataFrame] = {}
     scen_to_q_vars: dict[str, list[str]] = {}
     scen_to_test_insts: dict[str, list[dict[str, str]]] = {}
-    scen_to_ref: dict[str, tuple[list[DiscreteFactor], float, float]] = {}
+    scen_to_ref: dict[str, TestOut] = {}
     # if in_out_inf_vars:
     #     scen_to_df["inout"] = pd.DataFrame()
     # if rand_inf_vars:
@@ -305,8 +306,7 @@ def benchmark_multi(
 
             for scen, d_f in scen_to_df.items():
                 LOGGER.info("Scenario %s", scen)
-                ref_facts, tot_ref_time, _ = scen_to_ref[scen]
-                res_single = benchmark_single(ref_facts, tot_ref_time, trained_models,
+                res_single = benchmark_single(scen_to_ref[scen], trained_models,
                                               scen_to_test_insts[scen], scen_to_q_vars[scen],
                                               learnt_model if not overlap else None)
                 res_single[_BENCHMARK_INDEX] = round(overlap, 1)
