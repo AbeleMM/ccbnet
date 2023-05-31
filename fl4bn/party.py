@@ -1,6 +1,7 @@
 import itertools
 from collections import defaultdict
-from typing import Collection, cast
+from collections.abc import Collection
+from typing import cast
 
 import networkx as nx
 import numpy as np

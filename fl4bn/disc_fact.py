@@ -1,4 +1,4 @@
-from typing import NamedTuple
+from dataclasses import dataclass, field
 
 import numpy as np
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
@@ -10,9 +10,10 @@ except ImportError:
     _USE_GPU = False
 
 
-class DiscFactCfg(NamedTuple):
-    allow_gpu = False
-    float_type = np.float_
+@dataclass
+class DiscFactCfg:
+    allow_gpu: bool = field(default=False)
+    float_type: type = field(default=np.float_)
 
 
 class DiscFact(DiscreteFactor):

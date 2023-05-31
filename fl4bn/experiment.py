@@ -1,10 +1,12 @@
 import logging
 import warnings
-from collections import Counter, namedtuple
+from collections import Counter
+from collections.abc import Collection
+from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
 from time import perf_counter_ns
-from typing import Collection, cast
+from typing import cast
 
 import networkx as nx
 import numpy as np
@@ -28,8 +30,13 @@ BENCHMARK_PIVOT_COL: str = "Name"
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
                     level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
-TestOut = namedtuple("TestOut", ["res_facts", "tot_time", "avg_comm_vals"],
-                     defaults=[cast(list[str], []), 0.0, 0.0])
+
+
+@dataclass
+class TestOut:
+    res_facts: list[DiscreteFactor] = field(default_factory=list)
+    tot_time: float = field(default=0.0)
+    avg_comm_vals: float = field(default=0.0)
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -196,13 +203,13 @@ def benchmark_single(
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        pred_facts, tot_pred_time, avg_comm_vals = get_inf_res(model, test_samples, query_vars)
+        pred_out = get_inf_res(model, test_samples, query_vars)
 
-        row["Brier"] = round(calc_brier(ref_out.res_facts, pred_facts), 3)
+        row["Brier"] = round(calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
 
-        row["RelTotTime"] = round(tot_pred_time / ref_out.tot_time, 2)
+        row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
 
-        row["AvgCommVals"] = round(avg_comm_vals, 2)
+        row["AvgCommVals"] = round(pred_out.avg_comm_vals, 2)
 
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
 
