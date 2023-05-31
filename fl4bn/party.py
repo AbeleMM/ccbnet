@@ -17,7 +17,7 @@ DS = psi.DataStructure.RAW
 PMD_TO_MAX_CM_BITS = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
 HE_DEC_BITS = 40
 SMPC_SEED = 1
-MIN_VAL = 1e-3
+MIN_VAL = 0.1
 
 
 class Party(Model):
