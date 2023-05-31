@@ -31,6 +31,7 @@ class Party(Model):
         self.local_bn = local_bn
         self.split_ov = split_ov
         self.dfc = dfc
+        self.base_fact = DiscFact([], [], 1, dfc=self.dfc)
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
@@ -62,7 +63,8 @@ class Party(Model):
             ]
             discard: set[str] = set().union(targets, party.no_marg_nodes, evidence)
             nodes = set(n for n in party.node_to_cpd if n not in discard)
-            res_fact = var_elim(party_facts, nodes, party.node_to_nr_states)
+            res_fact = var_elim(
+                party_facts, nodes, party.node_to_nr_states, party.base_fact)
             facts.append(res_fact)
             self.last_nr_comm_vals += res_fact.values.size
 
@@ -75,7 +77,7 @@ class Party(Model):
 
         nodes.difference_update(targets)
 
-        return var_elim(facts, nodes, node_to_nr_states)
+        return var_elim(facts, nodes, node_to_nr_states, self.base_fact)
 
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()

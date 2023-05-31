@@ -14,6 +14,7 @@ class SingleNet(Model, BayesianNetwork):
         BayesianNetwork.__init__(self)
         self.allow_loops = allow_loops
         self.node_to_fact: dict[str, DiscreteFactor] = {}
+        self.base_fact = DiscFact([], [], 1)
 
     @classmethod
     def from_bn(cls, bayes_net: BayesianNetwork, allow_loops=False) -> "SingleNet":
@@ -32,7 +33,7 @@ class SingleNet(Model, BayesianNetwork):
         discard: set[str] = set().union(targets, evidence)
         nodes: set[str] = set(n for n in self.nodes() if n not in discard)
 
-        return var_elim(facts, nodes, self.node_to_nr_states)
+        return var_elim(facts, nodes, self.node_to_nr_states, self.base_fact)
 
     def as_dig(self) -> nx.DiGraph:
         return self

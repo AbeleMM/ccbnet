@@ -7,7 +7,6 @@ from typing import cast
 import networkx as nx
 import numpy as np
 import numpy.typing as npt
-from pgmpy.factors import factor_product
 from pgmpy.factors.discrete import DiscreteFactor
 
 
@@ -47,8 +46,8 @@ class Model(ABC):
 
 
 def var_elim(
-        factors: list[DiscreteFactor], nodes: set[str], node_to_nr_states: dict[str, int]) -> \
-        DiscreteFactor:
+        factors: list[DiscreteFactor], nodes: set[str], node_to_nr_states: dict[str, int],
+        base_fact: DiscreteFactor) -> DiscreteFactor:
     facts = deque(factors)
     remaining_nodes = set(nodes)
 
@@ -68,26 +67,28 @@ def var_elim(
             ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),
             key=itemgetter(1, 0))
         remaining_nodes.remove(node)
-        rel_facts: list[DiscreteFactor] = []
+        prod_facts = base_fact.copy()
         new_facts: deque[DiscreteFactor] = deque()
 
         while facts:
             fact = facts.popleft()
             if node in fact.variables:
-                rel_facts.append(fact)
+                prod_facts.product(fact, inplace=True)
             else:
                 new_facts.append(fact)
 
-        prod_facts = cast(DiscreteFactor, factor_product(*rel_facts))
         prod_facts.marginalize([node], inplace=True)
         facts = new_facts
         facts.append(prod_facts)
 
     try:
-        prod_facts = cast(DiscreteFactor, factor_product(*facts))
+        prod_facts = facts.popleft().copy()
     except NotImplementedError:
-        prod_facts = factors[0].copy()
-        prod_facts.marginalize(prod_facts.variables, inplace=True)
+        prod_facts = base_fact.copy()
+
+    while facts:
+        prod_facts.product(facts.popleft(), inplace=True)
+
     prod_facts.normalize(inplace=True)
 
     return prod_facts
