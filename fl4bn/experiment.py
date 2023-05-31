@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from avg_outs import AvgOuts, MeanType
 from combine import CombineMethod, CombineOp, combine_bns
+from disc_fact import DiscFactCfg
 from joblib import Memory
 from model import Model
 from party import combine
@@ -175,6 +176,8 @@ def benchmark_single(
     name_to_bn: dict[str, Model] = {}
     LOGGER.info("Constructing approach instances")
 
+    decent_dfc = DiscFactCfg(False, np.float_)
+
     if learnt_model:
         name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
 
@@ -187,8 +190,8 @@ def benchmark_single(
     name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, True,
                                       CombineOp.GEO_MEAN)
     name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.GEO)
-    name_to_bn["Decentralized"] = combine(trained_models, True)
-    name_to_bn["Decentralized - Compact"] = combine(trained_models, False)
+    name_to_bn["Decentralized"] = combine(trained_models, True, decent_dfc)
+    name_to_bn["Decentralized - Compact"] = combine(trained_models, False, decent_dfc)
 
     for name, model in name_to_bn.items():
         LOGGER.info("Benchmarking approach %s", name)

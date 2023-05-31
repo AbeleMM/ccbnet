@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 import private_set_intersection.python as psi
 import tenseal as ts
+from disc_fact import DiscFact, DiscFactCfg
 from model import Model, var_elim
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
@@ -21,15 +22,19 @@ MIN_VAL = 0.1
 
 
 class Party(Model):
-    def __init__(self, identifier: int, local_bn: BayesianNetwork, split_ov: bool) -> None:
+    def __init__(
+            self, identifier: int, local_bn: BayesianNetwork,
+            split_ov: bool, dfc: DiscFactCfg) -> None:
         super().__init__()
         self.identifier = identifier
         self.local_bn = local_bn
         self.split_ov = split_ov
+        self.dfc = dfc
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
-        self.node_to_fact = {node: cpd.to_factor() for node, cpd in self.node_to_cpd.items()}
+        self.node_to_fact = {
+            node: DiscFact.from_cpd(cpd, self.dfc) for node, cpd in self.node_to_cpd.items()}
         self.node_to_nr_states = {n: len(s) for n, s in local_bn.states.items()}
         self.parties: list[Party] = []
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
@@ -285,15 +290,15 @@ class Party(Model):
 
         if cpd:
             self.node_to_cpd[cpd.variable] = cpd
-            self.node_to_fact[cpd.variable] = cpd.to_factor()
+            self.node_to_fact[cpd.variable] = DiscFact.from_cpd(cpd, self.dfc)
             self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())
         else:
             del self.node_to_cpd[node]
             del self.node_to_fact[node]
 
 
-def combine(bns: list[BayesianNetwork], split_ov=True) -> Party:
-    parties = [Party(i, bn, split_ov) for i, bn in enumerate(bns)]
+def combine(bns: list[BayesianNetwork], split_ov: bool, dfc: DiscFactCfg) -> Party:
+    parties = [Party(i, bn, split_ov, dfc) for i, bn in enumerate(bns)]
 
     for party in parties:
         party.add_party(parties)

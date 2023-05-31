@@ -5,6 +5,8 @@ from model import Model, var_elim
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
+from fl4bn.disc_fact import DiscFact
+
 
 class SingleNet(Model, BayesianNetwork):
     def __init__(self, allow_loops: bool) -> None:
@@ -47,5 +49,5 @@ class SingleNet(Model, BayesianNetwork):
     def add_cpds(self, *cpds: TabularCPD) -> None:
         super().add_cpds(*cpds)
         for cpd in cpds:
-            self.node_to_fact[cpd.variable] = cpd.to_factor()
+            self.node_to_fact[cpd.variable] = DiscFact.from_cpd(cpd)
             self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())

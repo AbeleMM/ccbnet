@@ -86,7 +86,8 @@ def var_elim(
     try:
         prod_facts = cast(DiscreteFactor, factor_product(*facts))
     except NotImplementedError:
-        prod_facts = DiscreteFactor([], [], 1)
+        prod_facts = factors[0].copy()
+        prod_facts.marginalize(prod_facts.variables, inplace=True)
     prod_facts.normalize(inplace=True)
 
     return prod_facts
