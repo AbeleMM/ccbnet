@@ -1,6 +1,7 @@
 import itertools
 from collections import defaultdict
 from collections.abc import Collection
+from operator import attrgetter
 from typing import cast
 
 import networkx as nx
@@ -38,7 +39,7 @@ class Party(Model):
         self.node_to_fact = {
             node: DiscFact.from_cpd(cpd, self.dfc) for node, cpd in self.node_to_cpd.items()}
         self.node_to_nr_states = {n: len(s) for n, s in local_bn.states.items()}
-        self.parties: list[Party] = []
+        self.peers: list[Party] = []
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
         self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
@@ -49,7 +50,7 @@ class Party(Model):
         facts: list[DiscreteFactor] = []
         self.last_nr_comm_vals = 0
 
-        for party in [cast(Party, self), *self.parties]:
+        for party in [cast(Party, self), *self.peers]:
             party_facts = [
                 cast(
                     DiscreteFactor,
@@ -82,28 +83,26 @@ class Party(Model):
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()
 
-        for party in [cast(Party, self), *self.parties]:
+        for party in [cast(Party, self), *self.peers]:
             dig.add_edges_from(
                 [(p, n) for n, f in party.node_to_cpd.items() for p in f.get_evidence()])
 
         return dig
 
-    def add_party(self, parties: list['Party']) -> None:
-        self.parties = sorted(
-            [party for party in parties if party.identifier != self.identifier],
-            key=lambda x: x.identifier
-        )
+    def add_peers(self, parties: list['Party']) -> None:
+        self.peers.extend(p for p in parties if p.identifier != self.identifier)
+        self.peers = sorted(set(self.peers), key=attrgetter("identifier"))
 
     def combine(self) -> None:
-        for party in [cast(Party, self), *self.parties]:
+        for party in [cast(Party, self), *self.peers]:
             party.find_overlaps()
 
-        for party in [cast(Party, self), *self.parties]:
+        for party in [cast(Party, self), *self.peers]:
             party.solve_overlaps()
 
     def find_overlaps(self) -> None:
         own_nodes_list = list(self.local_bn.nodes)
-        for party in self.parties:
+        for party in self.peers:
             if party.identifier < self.identifier:
                 continue
 
@@ -306,7 +305,7 @@ def combine(bns: list[BayesianNetwork], split_ov: bool, dfc: DiscFactCfg) -> Par
     parties = [Party(i, bn, split_ov, dfc) for i, bn in enumerate(bns)]
 
     for party in parties:
-        party.add_party(parties)
+        party.add_peers(parties)
 
     next(iter(parties)).combine()
 
