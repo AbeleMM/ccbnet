@@ -30,7 +30,7 @@ class SingleNet(Model, BayesianNetwork):
         discard: set[str] = set().union(targets, evidence)
         nodes: set[str] = set(n for n in self.nodes() if n not in discard)
 
-        return var_elim(facts, nodes)
+        return var_elim(facts, nodes, self.node_to_nr_states)
 
     def as_dig(self) -> nx.DiGraph:
         return self
@@ -46,4 +46,6 @@ class SingleNet(Model, BayesianNetwork):
 
     def add_cpds(self, *cpds: TabularCPD) -> None:
         super().add_cpds(*cpds)
-        self.node_to_fact.update((cpd.variable, cpd.to_factor()) for cpd in cpds)
+        for cpd in cpds:
+            self.node_to_fact[cpd.variable] = cpd.to_factor()
+            self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from collections import deque
+from collections import defaultdict, deque
+from math import prod
 from operator import itemgetter
 from typing import cast
 
@@ -14,6 +15,7 @@ class Model(ABC):
     @abstractmethod
     def __init__(self) -> None:
         self.last_nr_comm_vals = 0
+        self.node_to_nr_states: dict[str, int] = {}
 
     @abstractmethod
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
@@ -44,20 +46,28 @@ class Model(ABC):
         return dict(assignment)
 
 
-def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> DiscreteFactor:
+def var_elim(
+        factors: list[DiscreteFactor], nodes: set[str], node_to_nr_states: dict[str, int]) -> \
+        DiscreteFactor:
     facts = deque(factors)
     remaining_nodes = set(nodes)
 
     while remaining_nodes:
-        node_to_size_bound: dict[str, int] = {}
+        node_to_members: defaultdict[str, set[str]] = defaultdict(set)
+
         for fact in facts:
             for var in fact.variables:
                 if var not in remaining_nodes:
                     continue
-                node_to_size_bound[var] = node_to_size_bound.get(var, 1) * fact.values.size
-        node, _ = min(node_to_size_bound.items(), key=itemgetter(1, 0))
-        remaining_nodes.remove(node)
 
+                members = node_to_members[var]
+                members.update(fact.variables)
+                members.remove(var)
+
+        node, _ = min(
+            ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),
+            key=itemgetter(1, 0))
+        remaining_nodes.remove(node)
         rel_facts: list[DiscreteFactor] = []
         new_facts: deque[DiscreteFactor] = deque()
 

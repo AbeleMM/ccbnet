@@ -30,6 +30,7 @@ class Party(Model):
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }
         self.node_to_fact = {node: cpd.to_factor() for node, cpd in self.node_to_cpd.items()}
+        self.node_to_nr_states = {n: len(s) for n, s in local_bn.states.items()}
         self.parties: list[Party] = []
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
@@ -55,14 +56,20 @@ class Party(Model):
             ]
             discard: set[str] = set().union(targets, party.no_marg_nodes, evidence)
             nodes = set(n for n in party.node_to_cpd if n not in discard)
-            res_fact = var_elim(party_facts, nodes)
+            res_fact = var_elim(party_facts, nodes, party.node_to_nr_states)
             facts.append(res_fact)
             self.last_nr_comm_vals += res_fact.values.size
 
-        nodes: set[str] = set(
-            var for factor in facts for var in factor.variables if var not in targets)
+        nodes: set[str] = set()
+        node_to_nr_states: dict[str, int] = {}
 
-        return var_elim(facts, nodes)
+        for fact in facts:
+            nodes.update(fact.variables)
+            node_to_nr_states.update((n, len(s)) for n, s in fact.state_names.items())
+
+        nodes.difference_update(targets)
+
+        return var_elim(facts, nodes, node_to_nr_states)
 
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()
@@ -279,6 +286,7 @@ class Party(Model):
         if cpd:
             self.node_to_cpd[cpd.variable] = cpd
             self.node_to_fact[cpd.variable] = cpd.to_factor()
+            self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())
         else:
             del self.node_to_cpd[node]
             del self.node_to_fact[node]
