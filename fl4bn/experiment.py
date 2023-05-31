@@ -1,7 +1,7 @@
 import logging
 import warnings
 from collections import Counter
-from collections.abc import Collection
+from collections.abc import Collection, Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
@@ -37,6 +37,20 @@ class TestOut:
     res_facts: list[DiscreteFactor] = field(default_factory=list)
     tot_time: float = field(default=0.0)
     avg_comm_vals: float = field(default=0.0)
+
+
+def yield_approaches(
+        trained_models: list[BayesianNetwork], learnt_model: BayesianNetwork | None) -> \
+        Generator[tuple[str, Model], None, None]:
+    decent_dfc = DiscFactCfg(False, np.float_)
+
+    if learnt_model:
+        yield "Learnt", SingleNet.from_bn(learnt_model)
+    yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
+    yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
+    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO)
+    yield "Decentralized", combine(trained_models, True, decent_dfc)
+    yield "Decentralized - Compact", combine(trained_models, False, decent_dfc)
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
@@ -180,27 +194,8 @@ def benchmark_single(
         query_vars: list[str],
         learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
-    name_to_bn: dict[str, Model] = {}
-    LOGGER.info("Constructing approach instances")
 
-    decent_dfc = DiscFactCfg(False, np.float_)
-
-    if learnt_model:
-        name_to_bn["Learnt"] = SingleNet.from_bn(learnt_model)
-
-    # # TODO switch to combine_bns_weighted (by amount of samples)
-    # for method in CombineMethod:
-    #     name_to_bn[method.value] = combine_bns(trained_models, method)
-
-    name_to_bn["Combine"] = combine_bns(trained_models, CombineMethod.MULTI, True,
-                                        CombineOp.SUPERPOS)
-    name_to_bn["Union"] = combine_bns(trained_models, CombineMethod.UNION, True,
-                                      CombineOp.GEO_MEAN)
-    name_to_bn["AvgOuts"] = AvgOuts(trained_models, MeanType.GEO)
-    name_to_bn["Decentralized"] = combine(trained_models, True, decent_dfc)
-    name_to_bn["Decentralized - Compact"] = combine(trained_models, False, decent_dfc)
-
-    for name, model in name_to_bn.items():
+    for name, model in yield_approaches(trained_models, learnt_model):
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_out = get_inf_res(model, test_samples, query_vars)
