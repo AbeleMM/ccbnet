@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections import deque
 from operator import itemgetter
 from typing import cast
 
@@ -44,7 +45,7 @@ class Model(ABC):
 
 
 def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> DiscreteFactor:
-    facts = factors.copy()
+    facts = deque(factors)
     remaining_nodes = set(nodes)
 
     while remaining_nodes:
@@ -58,9 +59,10 @@ def var_elim(factors: list[DiscreteFactor], nodes: set[str]) -> DiscreteFactor:
         remaining_nodes.remove(node)
 
         rel_facts: list[DiscreteFactor] = []
-        new_facts: list[DiscreteFactor] = []
+        new_facts: deque[DiscreteFactor] = deque()
 
-        for fact in facts:
+        while facts:
+            fact = facts.popleft()
             if node in fact.variables:
                 rel_facts.append(fact)
             else:
