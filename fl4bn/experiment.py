@@ -27,8 +27,8 @@ from tqdm import tqdm
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
 BENCHMARK_PIVOT_COL: str = "Name"
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                    level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -39,182 +39,19 @@ class TestOut:
     avg_comm_vals: float = field(default=0.0)
 
 
-def yield_approaches(
+def _yield_approaches(
         trained_models: list[BayesianNetwork], learnt_model: BayesianNetwork | None) -> \
         Generator[tuple[str, Model], None, None]:
     decent_dfc = DiscFactCfg(False, np.float_)
 
     if learnt_model:
         yield "Learnt", SingleNet.from_bn(learnt_model)
+
     yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
     yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
     yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO)
     yield "Decentralized", combine(trained_models, True, decent_dfc)
     yield "Decentralized - Compact", combine(trained_models, False, decent_dfc)
-
-
-def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
-    if not struct_only:
-        for cpd in bayes_net.get_cpds() or []:
-            print(cpd)
-            print()
-    bayes_net.to_daft().render()
-
-
-def get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
-    # Island nodes are not included in neither the in, nor the out list.
-    in_nodes: list[str] = []
-    out_nodes: list[str] = []
-    edges_to, edges_from = [
-        set(cast(list[str], edge_list)) for edge_list in zip(*bayes_net.edges())]
-
-    for node in cast(Collection[str], bayes_net.nodes()):
-        if node not in edges_to and node in edges_from:
-            out_nodes.append(node)
-        elif node not in edges_from and node in edges_to:
-            in_nodes.append(node)
-
-    return (in_nodes, out_nodes)
-
-
-def split_vars(
-        bayes_net: BayesianNetwork,
-        nr_splits: int,
-        overlap_proportion: float,
-        connected=True,
-        seed: int | None = None) -> list[list[str]]:
-    rand = Random(seed)  # nosec
-    nr_overlaps = round(overlap_proportion * len(bayes_net.nodes()))
-
-    if connected:
-        dfs_tree = nx.dfs_tree(bayes_net.to_undirected())
-        communities: list[set[str]] = [
-            set(community)
-            for community in cast(
-                list[frozenset[str]],
-                nx.algorithms.community.greedy_modularity_communities(
-                    dfs_tree,
-                    cutoff=nr_splits,
-                    best_n=nr_splits
-                )
-            )
-        ]
-    else:
-        shuffled_nodes: list[str] = list(bayes_net.nodes())
-        rand.shuffle(shuffled_nodes)
-        communities: list[set[str]] = [set(x) for x in np.array_split(shuffled_nodes, nr_splits)]
-
-    shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
-    rand.shuffle(shuffled_edges)
-    return _overlap_communities(communities, nr_overlaps, shuffled_edges)
-
-
-@_memory.cache
-def train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, list[str]]) -> \
-        BayesianNetwork:
-    est = HillClimbSearch(data=samples, use_cache=True)
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        estimated_dag = est.estimate(
-            scoring_method="k2score",
-            max_indegree=max_nr_parents,
-            max_iter=10**4,
-            show_progress=False
-        )
-
-    bayes_net = BayesianNetwork()
-    bayes_net.add_nodes_from(samples.columns)
-    bayes_net.add_edges_from(estimated_dag.edges())
-
-    bayes_net.fit(
-        samples,
-        estimator=BayesianEstimator,
-        state_names=states,
-        complete_samples_only=True
-    )
-
-    return bayes_net
-
-
-def get_inf_res(
-        source: Model,
-        samples: list[dict[str, str]],
-        q_vars: list[str]) -> TestOut:
-    facts: list[DiscreteFactor] = []
-    tot_time = 0.0
-    sum_comm_vals = 0
-
-    for i, row in tqdm(enumerate(samples)):
-        start = perf_counter_ns()
-        query = source.query([q_vars[i]], row)
-
-        tot_time += perf_counter_ns() - start
-        facts.append(query)
-        sum_comm_vals += source.last_nr_comm_vals
-
-    return TestOut(facts, tot_time, sum_comm_vals / len(samples))
-
-
-def calc_brier(
-        ref_facts: list[DiscreteFactor],
-        pred_facts: list[DiscreteFactor]) -> float:
-    acc = 0.0
-
-    for i, ref_fact in enumerate(ref_facts):
-
-        for node in ref_fact.variables:
-            for state in ref_fact.state_names[node]:
-                node_state = {node: state}
-                ref_val = cast(float, ref_fact.get_value(**node_state))
-                try:
-                    pred_val = cast(float, pred_facts[i].get_value(**node_state))
-                except ValueError:
-                    pred_val = 0.0
-                acc += (ref_val - pred_val) ** 2
-
-    return acc / len(ref_facts)
-
-
-def calc_brier_alt(
-        ref_facts: list[DiscreteFactor],
-        pred_facts: list[DiscreteFactor]) -> float:
-    # Assumes variables, cardinality & state_names fields are equal between all factor pairs.
-    acc = sum(
-        cast(float, np.sum((ref_fact.values - pred_facts[i].values) ** 2))
-        for i, ref_fact in enumerate(ref_facts))
-
-    return acc / len(ref_facts)
-
-
-def benchmark_single(
-        ref_out: TestOut,
-        trained_models: list[BayesianNetwork],
-        test_samples: list[dict[str, str]],
-        query_vars: list[str],
-        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
-    res_single: list[dict[str, float | str]] = []
-
-    for name, model in yield_approaches(trained_models, learnt_model):
-        LOGGER.info("Benchmarking approach %s", name)
-        row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
-        pred_out = get_inf_res(model, test_samples, query_vars)
-
-        row["Brier"] = round(calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
-
-        row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
-
-        row["AvgCommVals"] = round(pred_out.avg_comm_vals, 2)
-
-        # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
-
-        # row["SHD"] = shd_score(ref_model, model)
-
-        # row["EdgeCount"] = len(model.edges())
-
-        res_single.append(row)
-
-    return pd.DataFrame.from_records(res_single)
 
 
 def benchmark_multi(
@@ -258,20 +95,20 @@ def benchmark_multi(
 
         if include_learnt:
             samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
-            learnt_model = cast(BayesianNetwork,
-                                train_model(samples, max_in_deg, ref_model.states))
+            learnt_model = cast(
+                BayesianNetwork, _train_model(samples, max_in_deg, ref_model.states))
         else:
             learnt_model = None
 
         LOGGER.info("Getting reference results")
-        ref_out = get_inf_res(SingleNet.from_bn(ref_model), test_insts, q_vars)
+        ref_out = _get_inf_res(SingleNet.from_bn(ref_model), test_insts, q_vars)
 
         for overlap in overlap_ratios:
             LOGGER.info("Overlap %s", overlap)
-            clients_train_vars = split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
+            clients_train_vars = _split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
             LOGGER.info("Training models")
             trained_models = cast(list[BayesianNetwork], [
-                train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
+                _train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ])
             res_single = benchmark_single(
@@ -283,6 +120,111 @@ def benchmark_multi(
 
     return d_f
 
+
+def benchmark_single(
+        ref_out: TestOut,
+        trained_models: list[BayesianNetwork],
+        test_samples: list[dict[str, str]],
+        query_vars: list[str],
+        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
+    res_single: list[dict[str, float | str]] = []
+
+    for name, model in _yield_approaches(trained_models, learnt_model):
+        LOGGER.info("Benchmarking approach %s", name)
+        row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
+        pred_out = _get_inf_res(model, test_samples, query_vars)
+
+        row["Brier"] = round(_calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
+
+        row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
+
+        row["AvgCommVals"] = round(pred_out.avg_comm_vals, 2)
+
+        # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
+
+        # row["SHD"] = shd_score(ref_model, model)
+
+        # row["EdgeCount"] = len(model.edges())
+
+        res_single.append(row)
+
+    return pd.DataFrame.from_records(res_single)
+
+
+def _get_in_out_nodes(bayes_net: BayesianNetwork) -> tuple[list[str], list[str]]:
+    # Island nodes are not included in neither the in, nor the out list.
+    in_nodes: list[str] = []
+    out_nodes: list[str] = []
+    edges_to, edges_from = [
+        set(cast(list[str], edge_list)) for edge_list in zip(*bayes_net.edges())]
+
+    for node in cast(Collection[str], bayes_net.nodes()):
+        if node not in edges_to and node in edges_from:
+            out_nodes.append(node)
+        elif node not in edges_from and node in edges_to:
+            in_nodes.append(node)
+
+    return (in_nodes, out_nodes)
+
+
+def _split_vars(
+        bayes_net: BayesianNetwork,
+        nr_splits: int,
+        overlap_proportion: float,
+        connected=True,
+        seed: int | None = None) -> list[list[str]]:
+    rand = Random(seed)  # nosec
+    nr_overlaps = round(overlap_proportion * len(bayes_net.nodes()))
+
+    if connected:
+        dfs_tree = nx.dfs_tree(bayes_net.to_undirected())
+        communities: list[set[str]] = [
+            set(community)
+            for community in cast(
+                list[frozenset[str]],
+                nx.algorithms.community.greedy_modularity_communities(
+                    dfs_tree,
+                    cutoff=nr_splits,
+                    best_n=nr_splits
+                )
+            )
+        ]
+    else:
+        shuffled_nodes: list[str] = list(bayes_net.nodes())
+        rand.shuffle(shuffled_nodes)
+        communities: list[set[str]] = [set(x) for x in np.array_split(shuffled_nodes, nr_splits)]
+
+    shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
+    rand.shuffle(shuffled_edges)
+    return _overlap_communities(communities, nr_overlaps, shuffled_edges)
+
+
+@_memory.cache
+def _train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, list[str]]) -> \
+        BayesianNetwork:
+    est = HillClimbSearch(data=samples, use_cache=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)
+        estimated_dag = est.estimate(
+            scoring_method="k2score",
+            max_indegree=max_nr_parents,
+            max_iter=10**4,
+            show_progress=False
+        )
+
+    bayes_net = BayesianNetwork()
+    bayes_net.add_nodes_from(samples.columns)
+    bayes_net.add_edges_from(estimated_dag.edges())
+
+    bayes_net.fit(
+        samples,
+        estimator=BayesianEstimator,
+        state_names=states,
+        complete_samples_only=True
+    )
+
+    return bayes_net
 
 def _overlap_communities(
         community_sets:  list[set[str]],
@@ -330,3 +272,61 @@ def _overlap_communities(
         community_sets[node_to_community[node_inc]].add(node_out)
 
     return [sorted(community) for community in community_sets]
+
+
+def _get_inf_res(
+        source: Model,
+        samples: list[dict[str, str]],
+        q_vars: list[str]) -> TestOut:
+    facts: list[DiscreteFactor] = []
+    tot_time = 0.0
+    sum_comm_vals = 0
+
+    for i, row in tqdm(enumerate(samples)):
+        start = perf_counter_ns()
+        query = source.query([q_vars[i]], row)
+
+        tot_time += perf_counter_ns() - start
+        facts.append(query)
+        sum_comm_vals += source.last_nr_comm_vals
+
+    return TestOut(facts, tot_time, sum_comm_vals / len(samples))
+
+
+def _calc_brier(
+        ref_facts: list[DiscreteFactor],
+        pred_facts: list[DiscreteFactor]) -> float:
+    acc = 0.0
+
+    for i, ref_fact in enumerate(ref_facts):
+
+        for node in ref_fact.variables:
+            for state in ref_fact.state_names[node]:
+                node_state = {node: state}
+                ref_val = cast(float, ref_fact.get_value(**node_state))
+                try:
+                    pred_val = cast(float, pred_facts[i].get_value(**node_state))
+                except ValueError:
+                    pred_val = 0.0
+                acc += (ref_val - pred_val) ** 2
+
+    return acc / len(ref_facts)
+
+
+def _calc_brier_alt(
+        ref_facts: list[DiscreteFactor],
+        pred_facts: list[DiscreteFactor]) -> float:
+    # Assumes variables, cardinality & state_names fields are equal between all factor pairs.
+    acc = sum(
+        cast(float, np.sum((ref_fact.values - pred_facts[i].values) ** 2))
+        for i, ref_fact in enumerate(ref_facts))
+
+    return acc / len(ref_facts)
+
+
+def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
+    if not struct_only:
+        for cpd in bayes_net.get_cpds() or []:
+            print(cpd)
+            print()
+    bayes_net.to_daft().render()

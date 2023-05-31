@@ -142,21 +142,22 @@ class Party(Model):
 
             neighbors = self.node_to_neighbors[node]
             overlap_parties: list[Party] = [self, *neighbors]
-            parents_union = self.get_parents_union(node, overlap_parties)
+            parents_union = self._get_parents_union(node, overlap_parties)
             nr_parties = len(overlap_parties)
-            node_to_states = self.get_node_to_states([node, *parents_union], overlap_parties)
-            context = self.gen_context(nr_parties, len(node_to_states[node]))
+            node_to_states = self._get_node_to_states([node, *parents_union], overlap_parties)
+            context = self._gen_context(nr_parties, len(node_to_states[node]))
             self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
             enc_cols_parties = [
                 party.set_vals_ret_enc(node, nr_parties, node_to_states, context)
                 for party in neighbors
             ]
-            column_sums: list[float] = self.calc_col_inner_prods(enc_cols_parties, nr_parties)
+            column_sums: list[float] = self._calc_col_inner_prods(enc_cols_parties, nr_parties)
 
             party_unmixed_shares = [
                 party.share_values(party.tmp_vals, len(overlap_parties))
                 for party in overlap_parties
             ]
+
             for i, shares in enumerate(map(list, zip(*party_unmixed_shares))):
                 overlap_parties[i].tmp_vals = np.array([1.0])
                 for share in shares:
@@ -168,6 +169,7 @@ class Party(Model):
                     party.mark_overlap_solved(node, node_to_states, cpd)
             else:
                 cpd = self.get_combined_cpd(node, column_sums, parents_union, node_to_states)
+
                 for party in neighbors:
                     cpd.values *= party.get_combined_cpd(
                         node, column_sums, parents_union, node_to_states).values
@@ -176,10 +178,10 @@ class Party(Model):
 
         self.no_marg_nodes = sorted(set(self.no_marg_nodes))
 
-    def get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
+    def _get_parents_union(self, node: str, parties: list['Party']) -> list[str]:
         return sorted(set().union(*[party.local_bn.get_parents(node) for party in parties]))
 
-    def get_node_to_states(
+    def _get_node_to_states(
             self, nodes: list[str], parties: list['Party']) -> dict[str, list[str]]:
         node_to_val_dict: dict[str, dict[str, None]] = {node: {} for node in nodes}
 
@@ -191,7 +193,7 @@ class Party(Model):
 
         return {node: list(values_dict) for node, values_dict in node_to_val_dict.items()}
 
-    def gen_context(self, nr_parties: int, nr_states: int) -> ts.Context:
+    def _gen_context(self, nr_parties: int, nr_states: int) -> ts.Context:
         aux = nr_states.bit_length()  # prec before dec point & inner/outer bits diff
         inner_bits = HE_DEC_BITS + aux
         outer_bits = inner_bits + aux
@@ -212,11 +214,11 @@ class Party(Model):
             self, node: str, nr_parties: int,
             node_to_states: dict[str, list[str]],
             context: ts.Context | None) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
-        values = self.get_expanded_values(node, node_to_states) ** (1 / nr_parties)
+        values = self._get_expanded_values(node, node_to_states) ** (1 / nr_parties)
         self.tmp_vals = values.transpose()
         return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
-    def calc_col_inner_prods(
+    def _calc_col_inner_prods(
             self, enc_cols_parties: list[list[ts.CKKSVector | npt.NDArray[np.float_]]],
             nr_parties: int) -> list[float]:
         col_ips: list[float] = []
@@ -246,7 +248,7 @@ class Party(Model):
             state_names=node_to_states
         )
 
-    def get_expanded_values(
+    def _get_expanded_values(
             self, node: str, node_to_states: dict[str, list[str]]) -> npt.NDArray[np.float_]:
         factor = cast(TabularCPD, self.local_bn.get_cpds(node)).to_factor()
         values: list[list[float]] = []
