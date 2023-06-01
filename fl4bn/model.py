@@ -81,10 +81,7 @@ def var_elim(
         facts = new_facts
         facts.append(prod_facts)
 
-    try:
-        prod_facts = facts.popleft().copy()
-    except NotImplementedError:
-        prod_facts = base_fact.copy()
+    prod_facts = base_fact.copy()
 
     while facts:
         prod_facts.product(facts.popleft(), inplace=True)
