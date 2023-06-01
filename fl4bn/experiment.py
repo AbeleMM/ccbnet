@@ -310,18 +310,7 @@ def _calc_brier(
                     pred_val = 0.0
                 acc += (ref_val - pred_val) ** 2
 
-    return acc / len(ref_facts)
-
-
-def _calc_brier_alt(
-        ref_facts: list[DiscreteFactor],
-        pred_facts: list[DiscreteFactor]) -> float:
-    # Assumes variables, cardinality & state_names fields are equal between all factor pairs.
-    acc = sum(
-        cast(float, np.sum((ref_fact.values - pred_facts[i].values) ** 2))
-        for i, ref_fact in enumerate(ref_facts))
-
-    return acc / len(ref_facts)
+    return float(acc / len(ref_facts))
 
 
 def print_bn(bayes_net: BayesianNetwork, struct_only=False) -> None:
