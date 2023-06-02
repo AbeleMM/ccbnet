@@ -39,13 +39,9 @@ class TestOut:
     avg_comm_vals: float = field(default=0.0)
 
 
-def _yield_approaches(
-        trained_models: list[BayesianNetwork], learnt_model: BayesianNetwork | None) -> \
+def _yield_approaches(trained_models: list[BayesianNetwork]) -> \
         Generator[tuple[str, Model], None, None]:
     decent_dfc = DiscFactCfg(False, np.float_)
-
-    if learnt_model:
-        yield "Learnt", SingleNet.from_bn(learnt_model)
 
     yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
     yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
@@ -55,21 +51,23 @@ def _yield_approaches(
 
 
 def benchmark_multi(
-        ref_model: BayesianNetwork,
+        ref_bn: BayesianNetwork,
         nr_clients: int,
         overlap_ratios: list[float],
         samples_factor: int = 50000,
         test_counts: int = 2000,
-        include_learnt=False,
+        connected: bool = True,
         r_seed: int | None = None) -> pd.DataFrame:
-    LOGGER.info("%s %s", ref_model.name, nr_clients)
-    samples_per_client = samples_factor * len(ref_model.nodes()) // nr_clients
+    LOGGER.info("%s %s", ref_bn.name, nr_clients)
+    samples_per_client = samples_factor * len(ref_bn.nodes()) // nr_clients
+    nr_evid_vars = round(0.5 * (len(ref_bn) - 1))
+    ref_model = SingleNet.from_bn(ref_bn, False)
     d_f = pd.DataFrame()
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
 
-        all_samples = BayesianModelSampling(ref_model).forward_sample(
+        all_samples = BayesianModelSampling(ref_bn).forward_sample(
             size=samples_per_client * nr_clients + test_counts,
             seed=r_seed,
             show_progress=False
@@ -78,41 +76,33 @@ def benchmark_multi(
             all_samples[i * samples_per_client:(i + 1) * samples_per_client]
             for i in range(nr_clients)
         ]
+        test_samples = cast(
+            list[dict[str, str]], all_samples[-test_counts:].to_dict(orient="records"))
         LOGGER.info("Sampled")
-        test_samples = cast(list[dict[str, str]],
-                            all_samples[-test_counts:].to_dict(orient="records"))
-        test_insts: list[dict[str, str]] = []
-        q_vars: list[str] = []
-        rand = Random(r_seed)
-
-        for test_sample in test_samples:
-            evid = rand.sample(ref_model.nodes(), round(0.2 * len(ref_model)))
-            test_insts.append({k: test_sample[k] for k in evid})
-            q_vars.append(rand.choice([n for n in ref_model.nodes() if n not in evid]))
-
-        LOGGER.info("Found evidence & queries for tests")
-        (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_model.edges()).most_common(1)
-
-        if include_learnt:
-            samples = pd.concat(clients_train_samples, ignore_index=True, copy=False)
-            learnt_model = cast(
-                BayesianNetwork, _train_model(samples, max_in_deg, ref_model.states))
-        else:
-            learnt_model = None
-
-        LOGGER.info("Getting reference results")
-        ref_out = _get_inf_res(SingleNet.from_bn(ref_model), test_insts, q_vars)
+        (_, max_in_deg), *_ = Counter(e_inc for (_, e_inc, *_) in ref_bn.edges()).most_common(1)
 
         for overlap in overlap_ratios:
             LOGGER.info("Overlap %s", overlap)
-            clients_train_vars = _split_vars(ref_model, nr_clients, overlap, True, seed=r_seed)
+            clients_train_vars, ov_vars = _split_vars(
+                ref_bn, nr_clients, overlap, connected, seed=r_seed)
             LOGGER.info("Training models")
             trained_models = cast(list[BayesianNetwork], [
-                _train_model(clients_train_samples[i][train_vars], max_in_deg, ref_model.states)
+                _train_model(clients_train_samples[i][train_vars], max_in_deg, ref_bn.states)
                 for i, train_vars in enumerate(clients_train_vars)
             ])
+            rand = Random(r_seed)
+            test_insts: list[dict[str, str]] = []
+            q_vars: list[str] = []
+
+            for test_sample in test_samples:
+                q_var = rand.choice(ov_vars)
+                q_vars.append(q_var)
+                evid: list[str] = rand.sample(
+                    [n for n in ref_bn.nodes() if n != q_var], nr_evid_vars)
+                test_insts.append({k: test_sample[k] for k in evid})
+
             res_single = benchmark_single(
-                ref_out, trained_models, test_insts, q_vars, learnt_model if not overlap else None)
+                ref_model, trained_models, test_insts, q_vars)
             res_single[_BENCHMARK_INDEX] = round(overlap, 1)
             d_f = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 
@@ -122,30 +112,25 @@ def benchmark_multi(
 
 
 def benchmark_single(
-        ref_out: TestOut,
+        ref_model: Model,
         trained_models: list[BayesianNetwork],
         test_samples: list[dict[str, str]],
-        query_vars: list[str],
-        learnt_model: BayesianNetwork | None = None) -> pd.DataFrame:
+        query_vars: list[str]) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
+    LOGGER.info("Getting reference results")
+    ref_out = _get_inf_res(ref_model, test_samples, query_vars)
 
-    for name, model in _yield_approaches(trained_models, learnt_model):
+    for name, model in _yield_approaches(trained_models):
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_out = _get_inf_res(model, test_samples, query_vars)
 
         row["Brier"] = round(_calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
-
         row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
-
         row["AvgCommVals"] = round(pred_out.avg_comm_vals, 2)
-
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
-
         # row["SHD"] = shd_score(ref_model, model)
-
         # row["EdgeCount"] = len(model.edges())
-
         res_single.append(row)
 
     return pd.DataFrame.from_records(res_single)
@@ -171,12 +156,14 @@ def _split_vars(
         bayes_net: BayesianNetwork,
         nr_splits: int,
         overlap_proportion: float,
-        connected=True,
-        seed: int | None = None) -> list[list[str]]:
-    rand = Random(seed)  # nosec
-    nr_overlaps = round(overlap_proportion * len(bayes_net.nodes()))
+        connected: bool,
+        seed: int | None = None) -> tuple[list[list[str]], list[str]]:
+    rand = Random(seed)
+    nr_overlaps = round(overlap_proportion * len(bayes_net))
 
     if connected:
+        shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
+        rand.shuffle(shuffled_edges)
         dfs_tree = nx.dfs_tree(bayes_net.to_undirected())
         communities: list[set[str]] = [
             set(community)
@@ -189,14 +176,15 @@ def _split_vars(
                 )
             )
         ]
+        splits, ov_vars = _overlap_communities(communities, nr_overlaps, shuffled_edges)
     else:
         shuffled_nodes: list[str] = list(bayes_net.nodes())
         rand.shuffle(shuffled_nodes)
-        communities: list[set[str]] = [set(x) for x in np.array_split(shuffled_nodes, nr_splits)]
+        ov_vars: set[str] = set(rand.sample(shuffled_nodes, nr_overlaps))
+        splits: list[set[str]] = [
+            ov_vars.union(x) for x in np.array_split(shuffled_nodes, nr_splits)]
 
-    shuffled_edges = cast(list[tuple[str, str]], list(bayes_net.edges()))
-    rand.shuffle(shuffled_edges)
-    return _overlap_communities(communities, nr_overlaps, shuffled_edges)
+    return [sorted(split) for split in splits], sorted(ov_vars)
 
 
 @_memory.cache
@@ -226,12 +214,13 @@ def _train_model(samples: pd.DataFrame, max_nr_parents: int, states: dict[str, l
 
     return bayes_net
 
+
 def _overlap_communities(
         community_sets:  list[set[str]],
         nr_overlaps: int,
-        shuffled_edges: list[tuple[str, str]]) -> list[list[str]]:
+        shuffled_edges: list[tuple[str, str]]) -> tuple[list[set[str]], set[str]]:
     node_to_community: dict[str, int] = {}
-    overlap_nodes: set[str] = set()
+    ov_nodes: set[str] = set()
     overlapped_communities: set[int] = set()
     remaining_edges: list[tuple[str, str]] = []
 
@@ -239,7 +228,7 @@ def _overlap_communities(
         node_to_community.update({node: i for node in community})
 
     for node_out, node_inc in shuffled_edges:
-        if len(overlap_nodes) >= nr_overlaps:
+        if len(ov_nodes) >= nr_overlaps:
             break
 
         community_node_out = node_to_community[node_out]
@@ -256,22 +245,22 @@ def _overlap_communities(
         ):
             remaining_edges.append((node_out, node_inc))
         else:
-            overlap_nodes.add(node_out)
-            overlap_nodes.add(node_inc)
+            ov_nodes.add(node_out)
+            ov_nodes.add(node_inc)
             overlapped_communities.update(edge_nodes_communities)
             community_sets[community_node_out].add(node_inc)
             community_sets[community_node_inc].add(node_out)
 
     for node_out, node_inc in remaining_edges:
-        if len(overlap_nodes) >= nr_overlaps:
+        if len(ov_nodes) >= nr_overlaps:
             break
 
-        overlap_nodes.add(node_out)
-        overlap_nodes.add(node_inc)
+        ov_nodes.add(node_out)
+        ov_nodes.add(node_inc)
         community_sets[node_to_community[node_out]].add(node_inc)
         community_sets[node_to_community[node_inc]].add(node_out)
 
-    return [sorted(community) for community in community_sets]
+    return community_sets, ov_nodes
 
 
 def _get_inf_res(

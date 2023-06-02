@@ -12,12 +12,12 @@ def main() -> None:
         model.name = net_name
         for client_count in client_counts:
             res = benchmark_multi(
-                ref_model=model,
+                ref_bn=model,
                 nr_clients=client_count,
                 overlap_ratios=[0.1, 0.3, 0.6],
                 samples_factor=500,
                 test_counts=2000,
-                include_learnt=False,
+                connected=True,
                 r_seed=42
             )
             writer.write(net_name, client_count, res)
