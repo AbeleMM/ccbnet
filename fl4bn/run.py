@@ -6,7 +6,9 @@ from writer import OutTarget, Writer
 def main() -> None:
     writer = Writer(OutTarget.NONE)
     nets = ["asia", "sachs", "child", "alarm", "insurance", "win95pts"]
+    # nets = ["asia", "sachs", "child", "alarm", "insurance"]
     client_counts = [2, 4, 8]
+    # client_counts = [2, 4]
     for net_name in nets:
         model = get_example_model(net_name)
         model.name = net_name
@@ -14,10 +16,12 @@ def main() -> None:
             res = benchmark_multi(
                 ref_bn=model,
                 nr_clients=client_count,
-                overlap_ratios=[0.1, 0.3, 0.6],
+                overlap_ratios=[0.1, 0.3, 0.5],
+                # overlap_ratios=[0.1, 0.3],
                 samples_factor=500,
                 test_counts=2000,
                 connected=True,
+                # connected=False,
                 r_seed=42
             )
             writer.write(net_name, client_count, res)

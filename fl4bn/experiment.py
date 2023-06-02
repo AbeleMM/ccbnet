@@ -60,7 +60,7 @@ def benchmark_multi(
         r_seed: int | None = None) -> pd.DataFrame:
     LOGGER.info("%s %s", ref_bn.name, nr_clients)
     samples_per_client = samples_factor * len(ref_bn.nodes()) // nr_clients
-    nr_evid_vars = round(0.5 * (len(ref_bn) - 1))
+    nr_evid_vars = round(0.6 * (len(ref_bn) - 1))
     ref_model = SingleNet.from_bn(ref_bn, False)
     d_f = pd.DataFrame()
 
