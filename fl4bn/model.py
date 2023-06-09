@@ -48,8 +48,9 @@ class Model(ABC):
 def var_elim(
         factors: list[DiscreteFactor], nodes: set[str], node_to_nr_states: dict[str, int],
         base_fact: DiscreteFactor) -> DiscreteFactor:
-    facts = deque(factors)
     remaining_nodes = set(nodes)
+    facts = deque(factors)
+    new_facts: deque[DiscreteFactor] = deque()
 
     while remaining_nodes:
         node_to_members: defaultdict[str, set[str]] = defaultdict(set)
@@ -68,7 +69,6 @@ def var_elim(
             key=itemgetter(1, 0))
         remaining_nodes.remove(node)
         prod_facts = base_fact.copy()
-        new_facts: deque[DiscreteFactor] = deque()
 
         while facts:
             fact = facts.popleft()
@@ -78,7 +78,7 @@ def var_elim(
                 new_facts.append(fact)
 
         prod_facts.marginalize([node], inplace=True)
-        facts = new_facts
+        facts, new_facts = new_facts, facts
         facts.append(prod_facts)
 
     prod_facts = base_fact.copy()
