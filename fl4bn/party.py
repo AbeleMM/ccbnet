@@ -25,11 +25,12 @@ MIN_VAL = 0.1
 
 class Party(Model):
     def __init__(
-            self, identifier: int, local_bn: BayesianNetwork,
-            split_ov: bool, dfc: DiscFactCfg) -> None:
+            self, identifier: int, local_bn: BayesianNetwork, weight: float, split_ov: bool,
+            dfc: DiscFactCfg) -> None:
         super().__init__()
         self.identifier = identifier
         self.local_bn = local_bn
+        self.weight = weight
         self.split_ov = split_ov
         self.dfc = dfc
         self.base_fact = DiscFact([], [], 1, dfc=self.dfc)
@@ -145,17 +146,18 @@ class Party(Model):
             overlap_parties: list[Party] = [self, *neighbors]
             parents_union = self._get_parents_union(node, overlap_parties)
             nr_parties = len(overlap_parties)
+            weight_sum = sum(p.weight for p in overlap_parties)
             node_to_states = self._get_node_to_states([node, *parents_union], overlap_parties)
             context = self._gen_context(nr_parties, len(node_to_states[node]))
-            self.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+            self.set_vals_ret_enc(node, weight_sum, node_to_states, context)
             enc_cols_parties = [
-                party.set_vals_ret_enc(node, nr_parties, node_to_states, context)
+                party.set_vals_ret_enc(node, weight_sum, node_to_states, context)
                 for party in neighbors
             ]
             column_sums: list[float] = self._calc_col_inner_prods(enc_cols_parties, nr_parties)
 
             party_unmixed_shares = [
-                party.share_values(party.tmp_vals, len(overlap_parties))
+                party.share_values(party.tmp_vals, nr_parties)
                 for party in overlap_parties
             ]
 
@@ -212,10 +214,12 @@ class Party(Model):
         return context
 
     def set_vals_ret_enc(
-            self, node: str, nr_parties: int,
+            self, node: str, weight_sum: float,
             node_to_states: dict[str, list[str]],
             context: ts.Context | None) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
-        values = self._get_expanded_values(node, node_to_states) ** (1 / nr_parties)
+        values = self._get_expanded_values(node, node_to_states)
+        values **= self.weight
+        values **= 1 / weight_sum
         self.tmp_vals = values.transpose()
         return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
@@ -301,8 +305,12 @@ class Party(Model):
             del self.node_to_fact[node]
 
 
-def combine(bns: list[BayesianNetwork], split_ov: bool, dfc: DiscFactCfg) -> Party:
-    parties = [Party(i, bn, split_ov, dfc) for i, bn in enumerate(bns)]
+def combine(
+        bns: list[BayesianNetwork], weights: list[float], split_ov: bool,
+        dfc: DiscFactCfg) -> Party:
+    if len(bns) != len(weights):
+        raise ValueError("Length of bayesian network and weight lists should be equal.")
+    parties = [Party(i, bn, weights[i], split_ov, dfc) for i, bn in enumerate(bns)]
 
     for party in parties:
         party.add_peers(parties)

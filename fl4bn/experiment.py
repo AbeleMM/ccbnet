@@ -46,8 +46,9 @@ def _yield_approaches(trained_models: list[BayesianNetwork]) -> \
     yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
     yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
     yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO)
-    yield "Decentralized", combine(trained_models, True, decent_dfc)
-    yield "Decentralized - Compact", combine(trained_models, False, decent_dfc)
+    yield "Decentralized", combine(trained_models, [1.0] * len(trained_models), True, decent_dfc)
+    yield "Decentralized - Compact", combine(
+        trained_models, [1.0] * len(trained_models), False, decent_dfc)
 
 
 def benchmark_multi(
