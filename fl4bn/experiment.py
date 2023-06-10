@@ -143,7 +143,7 @@ def benchmark_single(
 
         row["Brier"] = round(_calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
         row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
-        row["AvgCommVals"] = round(pred_out.avg_comm_vals, 2)
+        row["AvgCommVals"] = round(pred_out.avg_comm_vals)
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
         # row["SHD"] = shd_score(ref_model, model)
         # row["EdgeCount"] = len(model.edges())

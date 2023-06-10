@@ -5,10 +5,11 @@ from writer import OutTarget, Writer
 
 def main() -> None:
     writer = Writer(OutTarget.NONE)
-    nets = ["asia", "sachs", "child", "alarm", "insurance", "win95pts"]
-    # nets = ["asia", "sachs", "child", "alarm", "insurance"]
+    nets = ["asia", "child", "alarm", "insurance", "win95pts"]
+    # nets = ["asia", "child", "alarm", "insurance"]
     client_counts = [2, 4, 8]
     # client_counts = [2, 4]
+    eq_weights = True
     for net_name in nets:
         model = get_example_model(net_name)
         model.name = net_name
@@ -18,11 +19,11 @@ def main() -> None:
                 nr_clients=client_count,
                 overlap_ratios=[0.1, 0.3, 0.5],
                 # overlap_ratios=[0.1, 0.3],
-                samples_factor=500,
+                samples_factor=500 if eq_weights else 10,
                 test_counts=2000,
                 connected=True,
                 # connected=False,
-                eq_weights=True,
+                eq_weights=eq_weights,
                 r_seed=42
             )
             writer.write(net_name, client_count, res)
