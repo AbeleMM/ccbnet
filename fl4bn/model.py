@@ -7,14 +7,17 @@ from typing import cast
 import networkx as nx
 import numpy as np
 import numpy.typing as npt
+from disc_fact import DiscFact, DiscFactCfg
 from pgmpy.factors.discrete import DiscreteFactor
 
 
 class Model(ABC):
     @abstractmethod
-    def __init__(self) -> None:
+    def __init__(self, dfc: DiscFactCfg) -> None:
         self.last_nr_comm_vals = 0
         self.node_to_nr_states: dict[str, int] = {}
+        self.dfc = dfc
+        self.base_fact = DiscFact([], [], 1, dfc=self.dfc)
 
     @abstractmethod
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:

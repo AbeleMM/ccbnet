@@ -10,7 +10,7 @@ except ImportError:
     _USE_GPU = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class DiscFactCfg:
     allow_gpu: bool = field(default=False)
     float_type: type = field(default=np.float_)

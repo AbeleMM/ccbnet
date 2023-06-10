@@ -27,13 +27,11 @@ class Party(Model):
     def __init__(
             self, identifier: int, local_bn: BayesianNetwork, weight: float, split_ov: bool,
             dfc: DiscFactCfg) -> None:
-        super().__init__()
+        super().__init__(dfc)
         self.identifier = identifier
         self.local_bn = local_bn
         self.weight = weight
         self.split_ov = split_ov
-        self.dfc = dfc
-        self.base_fact = DiscFact([], [], 1, dfc=self.dfc)
         self.node_to_cpd: dict[str, TabularCPD] = {
             cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
         }

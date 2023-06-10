@@ -1,12 +1,13 @@
 import networkx as nx
+from disc_fact import DiscFactCfg
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 
 
 class Uniform(Model):
-    def __init__(self, bns: list[BayesianNetwork]) -> None:
-        super().__init__()
+    def __init__(self, bns: list[BayesianNetwork], dfc: DiscFactCfg) -> None:
+        super().__init__(dfc)
         self.states: dict[str, list[str]] = {}
         for bayes_net in bns:
             self.states.update(bayes_net.states)

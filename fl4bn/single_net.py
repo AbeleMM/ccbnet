@@ -5,20 +5,20 @@ from model import Model, var_elim
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
-from fl4bn.disc_fact import DiscFact
+from fl4bn.disc_fact import DiscFact, DiscFactCfg
 
 
 class SingleNet(Model, BayesianNetwork):
-    def __init__(self, allow_loops: bool) -> None:
-        Model.__init__(self)
+    def __init__(self, allow_loops: bool, dfc: DiscFactCfg) -> None:
+        Model.__init__(self, dfc)
         BayesianNetwork.__init__(self)
         self.allow_loops = allow_loops
         self.node_to_fact: dict[str, DiscreteFactor] = {}
-        self.base_fact = DiscFact([], [], 1)
 
     @classmethod
-    def from_bn(cls, bayes_net: BayesianNetwork, allow_loops=False) -> "SingleNet":
-        single_net = cls(allow_loops)
+    def from_bn(cls, bayes_net: BayesianNetwork, allow_loops: bool, dfc: DiscFactCfg) -> \
+            "SingleNet":
+        single_net = cls(allow_loops, dfc)
         single_net.add_nodes_from(bayes_net.nodes())
         single_net.add_edges_from(bayes_net.edges())
         single_net.add_cpds(*cast(list[TabularCPD], bayes_net.get_cpds()))
@@ -50,5 +50,5 @@ class SingleNet(Model, BayesianNetwork):
     def add_cpds(self, *cpds: TabularCPD) -> None:
         super().add_cpds(*cpds)
         for cpd in cpds:
-            self.node_to_fact[cpd.variable] = DiscFact.from_cpd(cpd)
+            self.node_to_fact[cpd.variable] = DiscFact.from_cpd(cpd, self.dfc)
             self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())

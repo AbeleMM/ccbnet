@@ -41,15 +41,19 @@ class TestOut:
 
 def _yield_approaches(trained_models: list[BayesianNetwork], weights: list[float]) -> \
         Generator[tuple[str, Model], None, None]:
-    decent_dfc = DiscFactCfg(False, np.float_)
+    dfc = DiscFactCfg(False, np.float_)
+    eq_weights = [1.0] * len(trained_models)
 
-    yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
-    yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
-    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO)
-    yield "Decentralized", combine(trained_models, weights, True, decent_dfc)
-    yield "Decentralized - Compact", combine(trained_models, weights, False, decent_dfc)
-    # yield "Decentralized - EQ", combine(
-    #     trained_models, [1.0] * len(trained_models), True, decent_dfc)
+    yield "Combine", combine_bns(
+        trained_models, eq_weights, CombineMethod.MULTI, True, CombineOp.SUPERPOS, dfc)
+    yield "Union", combine_bns(
+        trained_models, weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc)
+    # yield "Union - EQ", combine_bns(
+    #     trained_models, eq_weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc)
+    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO, dfc)
+    yield "Decentralized", combine(trained_models, weights, True, dfc)
+    # yield "Decentralized - EQ", combine(trained_models, eq_weights, True, dfc)
+    yield "Decentralized - Compact", combine(trained_models, weights, False, dfc)
 
 
 def benchmark_multi(
@@ -71,7 +75,7 @@ def benchmark_multi(
     client_samples = [
         round(samples_per_client * weight) for weight in weights]
     nr_evid_vars = round(0.6 * (len(ref_bn) - 1))
-    ref_model = SingleNet.from_bn(ref_bn, False)
+    ref_model = SingleNet.from_bn(ref_bn, False, DiscFactCfg(False, np.float_))
     d_f = pd.DataFrame()
 
     with warnings.catch_warnings():

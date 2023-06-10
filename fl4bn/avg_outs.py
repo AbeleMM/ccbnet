@@ -2,6 +2,7 @@ from collections import defaultdict
 from enum import Enum, auto
 
 import networkx as nx
+from disc_fact import DiscFactCfg
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
@@ -14,9 +15,11 @@ class MeanType(Enum):
 
 
 class AvgOuts(Model):
-    def __init__(self, bayes_nets: list[BayesianNetwork], mean_type=MeanType.ARITH) -> None:
-        super().__init__()
-        self.nets = [SingleNet.from_bn(bn, False) for bn in bayes_nets]
+    def __init__(
+            self, bayes_nets: list[BayesianNetwork], mean_type: MeanType,
+            dfc: DiscFactCfg) -> None:
+        super().__init__(dfc)
+        self.nets = [SingleNet.from_bn(bn, False, dfc) for bn in bayes_nets]
         self.mean_type = mean_type
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
