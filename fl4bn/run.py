@@ -22,6 +22,7 @@ def main() -> None:
                 test_counts=2000,
                 connected=True,
                 # connected=False,
+                eq_weights=True,
                 r_seed=42
             )
             writer.write(net_name, client_count, res)

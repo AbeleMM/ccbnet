@@ -39,16 +39,17 @@ class TestOut:
     avg_comm_vals: float = field(default=0.0)
 
 
-def _yield_approaches(trained_models: list[BayesianNetwork]) -> \
+def _yield_approaches(trained_models: list[BayesianNetwork], weights: list[float]) -> \
         Generator[tuple[str, Model], None, None]:
     decent_dfc = DiscFactCfg(False, np.float_)
 
     yield "Combine", combine_bns(trained_models, CombineMethod.MULTI, True, CombineOp.SUPERPOS)
     yield "Union", combine_bns(trained_models, CombineMethod.UNION, True, CombineOp.GEO_MEAN)
     yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO)
-    yield "Decentralized", combine(trained_models, [1.0] * len(trained_models), True, decent_dfc)
-    yield "Decentralized - Compact", combine(
-        trained_models, [1.0] * len(trained_models), False, decent_dfc)
+    yield "Decentralized", combine(trained_models, weights, True, decent_dfc)
+    yield "Decentralized - Compact", combine(trained_models, weights, False, decent_dfc)
+    # yield "Decentralized - EQ", combine(
+    #     trained_models, [1.0] * len(trained_models), True, decent_dfc)
 
 
 def benchmark_multi(
@@ -58,9 +59,17 @@ def benchmark_multi(
         samples_factor: int = 50000,
         test_counts: int = 2000,
         connected: bool = True,
+        eq_weights: bool = True,
         r_seed: int | None = None) -> pd.DataFrame:
     LOGGER.info("%s %s", ref_bn.name, nr_clients)
     samples_per_client = samples_factor * len(ref_bn.nodes()) // nr_clients
+    if eq_weights:
+        weights = [1.0] * nr_clients
+    else:
+        rand = Random(r_seed)
+        weights = [rand.uniform(0.1, 1.0) for _ in range(nr_clients)]
+    client_samples = [
+        round(samples_per_client * weight) for weight in weights]
     nr_evid_vars = round(0.6 * (len(ref_bn) - 1))
     ref_model = SingleNet.from_bn(ref_bn, False)
     d_f = pd.DataFrame()
@@ -69,14 +78,15 @@ def benchmark_multi(
         warnings.simplefilter("ignore", UserWarning)
 
         all_samples = BayesianModelSampling(ref_bn).forward_sample(
-            size=samples_per_client * nr_clients + test_counts,
+            size=sum(client_samples) + test_counts,
             seed=r_seed,
             show_progress=False
         )
-        clients_train_samples = [
-            all_samples[i * samples_per_client:(i + 1) * samples_per_client]
-            for i in range(nr_clients)
-        ]
+        clients_train_samples: list[pd.DataFrame] = []
+        running_sum = 0
+        for curr_samples in client_samples:
+            clients_train_samples.append(all_samples[running_sum:running_sum + curr_samples])
+            running_sum += curr_samples
         test_samples = cast(
             list[dict[str, str]], all_samples[-test_counts:].to_dict(orient="records"))
         LOGGER.info("Sampled")
@@ -103,7 +113,7 @@ def benchmark_multi(
                 test_insts.append({k: test_sample[k] for k in evid})
 
             res_single = benchmark_single(
-                ref_model, trained_models, test_insts, q_vars)
+                ref_model, trained_models, weights, test_insts, q_vars)
             res_single[_BENCHMARK_INDEX] = round(overlap, 1)
             d_f = pd.concat([d_f, res_single], ignore_index=True, copy=False)
 
@@ -115,13 +125,14 @@ def benchmark_multi(
 def benchmark_single(
         ref_model: Model,
         trained_models: list[BayesianNetwork],
+        weights: list[float],
         test_samples: list[dict[str, str]],
         query_vars: list[str]) -> pd.DataFrame:
     res_single: list[dict[str, float | str]] = []
     LOGGER.info("Getting reference results")
     ref_out = _get_inf_res(ref_model, test_samples, query_vars)
 
-    for name, model in _yield_approaches(trained_models):
+    for name, model in _yield_approaches(trained_models, weights):
         LOGGER.info("Benchmarking approach %s", name)
         row: dict[str, float | str] = {BENCHMARK_PIVOT_COL: name}
         pred_out = _get_inf_res(model, test_samples, query_vars)
