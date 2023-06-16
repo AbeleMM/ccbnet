@@ -41,7 +41,9 @@ class Writer():
                 self.save_fig(net_clients_str, d_f)
 
     def save_fig(self, net_clients_str: str, d_f: DataFrame) -> None:
-        for metric in [col for col in d_f.columns if col != BENCHMARK_PIVOT_COL]:
+        for metric in d_f.columns:
+            if metric == BENCHMARK_PIVOT_COL:
+                continue
             pivoted_res = d_f.pivot(columns=BENCHMARK_PIVOT_COL, values=metric)
             axes = cast(
                 Axes,

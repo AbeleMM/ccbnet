@@ -99,7 +99,7 @@ def combine_bns(
                         {bn: bn_to_conf[bn] for bn in node_bns}, combine_op),
                     evidence=parents_union,
                     evidence_card=[len(node_to_vals[p]) for p in parents_union],
-                    state_names={node_: node_to_vals[node_] for node_ in [node, *parents_union]}
+                    state_names={node_: node_to_vals[node_] for node_ in (node, *parents_union)}
                 )
 
                 node_cpd.normalize(inplace=True)

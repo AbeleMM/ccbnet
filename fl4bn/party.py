@@ -19,7 +19,6 @@ FPR = 0.0
 DS = psi.DataStructure.RAW
 PMD_TO_MAX_CM_BITS = {1024: 27, 2048: 54, 4096: 109, 8192: 218, 16384: 438, 32768: 881}
 HE_DEC_BITS = 40
-SMPC_SEED = 1
 MIN_VAL = 0.1
 
 
@@ -41,7 +40,7 @@ class Party(Model):
         self.peers: list[Party] = []
         self.node_to_neighbors: dict[str, list[Party]] = defaultdict(list)
         self.solved_overlaps: set[str] = set()
-        self.rand_gen = np.random.default_rng(seed=SMPC_SEED)
+        self.rand_gen = np.random.default_rng(seed=self.identifier)
         self.no_marg_nodes: list[str] = []
         self.tmp_vals: npt.NDArray[np.float_]
 
@@ -49,7 +48,7 @@ class Party(Model):
         facts: list[DiscreteFactor] = []
         self.last_nr_comm_vals = 0
 
-        for party in [cast(Party, self), *self.peers]:
+        for party in cast(Party, self), *self.peers:
             party_facts = [
                 cast(
                     DiscreteFactor,
@@ -93,10 +92,10 @@ class Party(Model):
         self.peers = sorted(set(self.peers), key=attrgetter("identifier"))
 
     def combine(self) -> None:
-        for party in [cast(Party, self), *self.peers]:
+        for party in cast(Party, self), *self.peers:
             party.find_overlaps()
 
-        for party in [cast(Party, self), *self.peers]:
+        for party in cast(Party, self), *self.peers:
             party.solve_overlaps()
 
     def find_overlaps(self) -> None:
@@ -216,8 +215,7 @@ class Party(Model):
             node_to_states: dict[str, list[str]],
             context: ts.Context | None) -> list[ts.CKKSVector | npt.NDArray[np.float_]]:
         values = self._get_expanded_values(node, node_to_states)
-        values **= self.weight
-        values **= 1 / weight_sum
+        values **= self.weight / weight_sum
         self.tmp_vals = values.transpose()
         return [ts.ckks_vector(context, col) if context else col for col in self.tmp_vals]
 
