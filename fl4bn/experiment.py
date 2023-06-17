@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 from collections import Counter
 from collections.abc import Collection, Generator
@@ -14,7 +15,7 @@ import pandas as pd
 from avg_outs import AvgOuts, MeanType
 from combine import CombineMethod, CombineOp, combine_bns
 from disc_fact import DiscFactCfg
-from joblib import Memory
+from joblib import Memory, Parallel, delayed
 from model import Model
 from party import combine
 from pgmpy.estimators import BayesianEstimator, HillClimbSearch
@@ -30,6 +31,12 @@ BENCHMARK_PIVOT_COL: str = "Name"
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
+try:
+    N_PARALLEL = len(os.sched_getaffinity(0))  # type: ignore
+except AttributeError:
+    N_PARALLEL = cast(int, os.cpu_count())
+N_PARALLEL -= 1
+os.environ["PYTHONWARNINGS"] = "ignore::UserWarning"
 
 
 @dataclass
@@ -97,10 +104,11 @@ def benchmark_multi(
             clients_train_vars, ov_vars = _split_vars(
                 ref_bn, nr_clients, overlap, connected, seed=r_seed)
             LOGGER.info("Training models")
-            trained_models = cast(list[BayesianNetwork], [
-                _train_model(clients_train_samples[i][train_vars], max_in_deg, ref_bn.states)
+            trained_models = Parallel(N_PARALLEL)(
+                delayed(_train_model)
+                (clients_train_samples[i][train_vars], max_in_deg, ref_bn.states)
                 for i, train_vars in enumerate(clients_train_vars)
-            ])
+            )
             rand = Random(r_seed)
             test_insts: list[dict[str, str]] = []
             q_vars: list[str] = []
@@ -202,7 +210,7 @@ def _split_vars(
 @_memory.cache
 def sample(bayes_net: BayesianNetwork, size: int, seed: int | None = None) -> pd.DataFrame:
     return BayesianModelSampling(bayes_net).forward_sample(
-        size=size, seed=seed, show_progress=False
+        size=size, seed=seed, show_progress=False, n_jobs=N_PARALLEL
     )
 
 
