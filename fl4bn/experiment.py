@@ -81,11 +81,7 @@ def benchmark_multi(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
 
-        all_samples = BayesianModelSampling(ref_bn).forward_sample(
-            size=sum(client_samples) + test_counts,
-            seed=r_seed,
-            show_progress=False
-        )
+        all_samples = sample(ref_bn, sum(client_samples) + test_counts, r_seed)
         clients_train_samples: list[pd.DataFrame] = []
         running_sum = 0
         for curr_samples in client_samples:
@@ -201,6 +197,13 @@ def _split_vars(
             ov_vars.union(x) for x in np.array_split(shuffled_nodes, nr_splits)]
 
     return [sorted(split) for split in splits], sorted(ov_vars)
+
+
+@_memory.cache
+def sample(bayes_net: BayesianNetwork, size: int, seed: int | None = None) -> pd.DataFrame:
+    return BayesianModelSampling(bayes_net).forward_sample(
+        size=size, seed=seed, show_progress=False
+    )
 
 
 @_memory.cache
