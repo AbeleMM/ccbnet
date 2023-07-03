@@ -4,6 +4,7 @@ import warnings
 from collections import Counter
 from collections.abc import Collection, Generator
 from dataclasses import dataclass, field
+from itertools import product
 from pathlib import Path
 from random import Random
 from time import perf_counter_ns
@@ -315,16 +316,14 @@ def _calc_brier(
     acc = 0.0
 
     for i, ref_fact in enumerate(ref_facts):
-
-        for node in ref_fact.variables:
-            for state in ref_fact.state_names[node]:
-                node_state = {node: state}
-                ref_val = cast(float, ref_fact.get_value(**node_state))
-                try:
-                    pred_val = cast(float, pred_facts[i].get_value(**node_state))
-                except ValueError:
-                    pred_val = 0.0
-                acc += (ref_val - pred_val) ** 2
+        for state_comb in product(*ref_fact.state_names.values()):
+            name_to_state = dict(zip(ref_fact.state_names.keys(), state_comb))
+            ref_val = cast(float, ref_fact.get_value(**name_to_state))
+            try:
+                pred_val = cast(float, pred_facts[i].get_value(**name_to_state))
+            except ValueError:
+                pred_val = 0.0
+            acc += (ref_val - pred_val) ** 2
 
     return float(acc / len(ref_facts))
 
