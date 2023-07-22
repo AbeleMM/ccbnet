@@ -68,20 +68,20 @@ def benchmark_multi(
         ref_bn: BayesianNetwork,
         nr_clients: int,
         overlap_ratios: list[float],
-        samples_factor: int = 50000,
+        samples_factor: int = 500,
         test_counts: int = 2000,
         connected: bool = True,
         eq_weights: bool = True,
         r_seed: int | None = None) -> pd.DataFrame:
     LOGGER.info("%s %s", ref_bn.name, nr_clients)
-    samples_per_client = samples_factor * len(ref_bn.nodes()) // nr_clients
+    base_samples_per_client = samples_factor * len(ref_bn.nodes()) // nr_clients
     if eq_weights:
         weights = [1.0] * nr_clients
     else:
         rand = Random(r_seed)
         weights = [rand.uniform(0.1, 1.0) for _ in range(nr_clients)]
-    client_samples = [
-        round(samples_per_client * weight) for weight in weights]
+    nr_samples_per_client = [
+        round(base_samples_per_client * weight) for weight in weights]
     nr_evid_vars = round(0.6 * (len(ref_bn) - 1))
     ref_model = SingleNet.from_bn(ref_bn, False, DiscFactCfg(False, np.float_))
     d_f = pd.DataFrame()
@@ -89,12 +89,12 @@ def benchmark_multi(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
 
-        all_samples = sample(ref_bn, sum(client_samples) + test_counts, r_seed)
+        all_samples = sample(ref_bn, sum(nr_samples_per_client) + test_counts, r_seed)
         clients_train_samples: list[pd.DataFrame] = []
         running_sum = 0
-        for curr_samples in client_samples:
-            clients_train_samples.append(all_samples[running_sum:running_sum + curr_samples])
-            running_sum += curr_samples
+        for nr_client_samples in nr_samples_per_client:
+            clients_train_samples.append(all_samples[running_sum:running_sum + nr_client_samples])
+            running_sum += nr_client_samples
         test_samples = cast(
             list[dict[str, str]], all_samples[-test_counts:].to_dict(orient="records"))
         LOGGER.info("Sampled")
@@ -105,11 +105,11 @@ def benchmark_multi(
             clients_train_vars, ov_vars = _split_vars(
                 ref_bn, nr_clients, overlap, connected, seed=r_seed)
             LOGGER.info("Training models")
-            trained_models = Parallel(N_PARALLEL)(
+            trained_models = cast(list[BayesianNetwork], Parallel(N_PARALLEL)(
                 delayed(_train_model)
                 (clients_train_samples[i][train_vars], max_in_deg, ref_bn.states)
                 for i, train_vars in enumerate(clients_train_vars)
-            )
+            ))
             rand = Random(r_seed)
             test_insts: list[dict[str, str]] = []
             q_vars: list[str] = []
