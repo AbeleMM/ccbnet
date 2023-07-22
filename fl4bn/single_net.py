@@ -1,7 +1,7 @@
 from typing import cast
 
 import networkx as nx
-from model import Model, var_elim
+from model import Model
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -33,7 +33,7 @@ class SingleNet(Model, BayesianNetwork):
         discard: set[str] = set().union(targets, evidence)
         nodes: set[str] = set(n for n in self.nodes() if n not in discard)
 
-        return var_elim(facts, nodes, self.node_to_nr_states, self.base_fact)
+        return self.var_elim(facts, nodes, self.node_to_nr_states)
 
     def as_dig(self) -> nx.DiGraph:
         return self

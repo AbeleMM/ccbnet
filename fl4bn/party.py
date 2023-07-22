@@ -10,7 +10,7 @@ import numpy.typing as npt
 import private_set_intersection.python as psi
 import tenseal as ts
 from disc_fact import DiscFact, DiscFactCfg
-from model import Model, var_elim
+from model import Model
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 
@@ -62,8 +62,7 @@ class Party(Model):
             ]
             discard: set[str] = set().union(targets, party.no_marg_nodes, evidence)
             nodes = set(n for n in party.node_to_cpd if n not in discard)
-            res_fact = var_elim(
-                party_facts, nodes, party.node_to_nr_states, party.base_fact)
+            res_fact = self.var_elim(party_facts, nodes, party.node_to_nr_states)
             facts.append(res_fact)
             self.last_nr_comm_vals += res_fact.values.size
 
@@ -76,7 +75,7 @@ class Party(Model):
 
         nodes.difference_update(targets)
 
-        return var_elim(facts, nodes, node_to_nr_states, self.base_fact)
+        return self.var_elim(facts, nodes, node_to_nr_states)
 
     def as_dig(self) -> nx.DiGraph:
         dig = nx.DiGraph()

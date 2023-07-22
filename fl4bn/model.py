@@ -47,48 +47,47 @@ class Model(ABC):
         assignment, *_ = cast(list[list[tuple[str, str]]], factor.assignment([argmax]))
         return dict(assignment)
 
+    def var_elim(
+            self, factors: list[DiscreteFactor],
+            nodes: set[str], node_to_nr_states: dict[str, int]) -> DiscreteFactor:
+        remaining_nodes = set(nodes)
+        facts = deque(factors)
+        new_facts: deque[DiscreteFactor] = deque()
 
-def var_elim(
-        factors: list[DiscreteFactor], nodes: set[str], node_to_nr_states: dict[str, int],
-        base_fact: DiscreteFactor) -> DiscreteFactor:
-    remaining_nodes = set(nodes)
-    facts = deque(factors)
-    new_facts: deque[DiscreteFactor] = deque()
+        while remaining_nodes:
+            node_to_members: defaultdict[str, set[str]] = defaultdict(set)
 
-    while remaining_nodes:
-        node_to_members: defaultdict[str, set[str]] = defaultdict(set)
+            for fact in facts:
+                for var in fact.variables:
+                    if var not in remaining_nodes:
+                        continue
 
-        for fact in facts:
-            for var in fact.variables:
-                if var not in remaining_nodes:
-                    continue
+                    members = node_to_members[var]
+                    members.update(fact.variables)
+                    members.remove(var)
 
-                members = node_to_members[var]
-                members.update(fact.variables)
-                members.remove(var)
+            node, _ = min(
+                ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),
+                key=itemgetter(1, 0))
+            remaining_nodes.remove(node)
+            prod_facts = self.base_fact.copy()
 
-        node, _ = min(
-            ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),
-            key=itemgetter(1, 0))
-        remaining_nodes.remove(node)
-        prod_facts = base_fact.copy()
+            while facts:
+                fact = facts.popleft()
+                if node in fact.variables:
+                    prod_facts.product(fact, inplace=True)
+                else:
+                    new_facts.append(fact)
+
+            prod_facts.marginalize([node], inplace=True)
+            facts, new_facts = new_facts, facts
+            facts.append(prod_facts)
+
+        prod_facts = self.base_fact.copy()
 
         while facts:
-            fact = facts.popleft()
-            if node in fact.variables:
-                prod_facts.product(fact, inplace=True)
-            else:
-                new_facts.append(fact)
+            prod_facts.product(facts.popleft(), inplace=True)
 
-        prod_facts.marginalize([node], inplace=True)
-        facts, new_facts = new_facts, facts
-        facts.append(prod_facts)
+        prod_facts.normalize(inplace=True)
 
-    prod_facts = base_fact.copy()
-
-    while facts:
-        prod_facts.product(facts.popleft(), inplace=True)
-
-    prod_facts.normalize(inplace=True)
-
-    return prod_facts
+        return prod_facts
