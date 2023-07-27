@@ -3,11 +3,12 @@ from disc_fact import DiscFactCfg
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
+from var_elim_heurs import VarElimHeur
 
 
 class Uniform(Model):
-    def __init__(self, bns: list[BayesianNetwork], dfc: DiscFactCfg) -> None:
-        super().__init__(dfc)
+    def __init__(self, bns: list[BayesianNetwork], dfc: DiscFactCfg, veh: VarElimHeur) -> None:
+        super().__init__(dfc, veh)
         self.states: dict[str, list[str]] = {}
         for bayes_net in bns:
             self.states.update(bayes_net.states)

@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-from collections import defaultdict, deque
-from math import prod
-from operator import itemgetter
+from collections import deque
 from typing import cast
 
 import networkx as nx
@@ -9,15 +7,17 @@ import numpy as np
 import numpy.typing as npt
 from disc_fact import DiscFact, DiscFactCfg
 from pgmpy.factors.discrete import DiscreteFactor
+from var_elim_heurs import VarElimHeur
 
 
 class Model(ABC):
     @abstractmethod
-    def __init__(self, dfc: DiscFactCfg) -> None:
+    def __init__(self, dfc: DiscFactCfg, veh: VarElimHeur) -> None:
         self.last_nr_comm_vals = 0
         self.node_to_nr_states: dict[str, int] = {}
         self.dfc = dfc
         self.base_fact = DiscFact([], [], 1, dfc=self.dfc)
+        self.veh = veh
 
     @abstractmethod
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:
@@ -55,20 +55,7 @@ class Model(ABC):
         new_facts: deque[DiscreteFactor] = deque()
 
         while remaining_nodes:
-            node_to_members: defaultdict[str, set[str]] = defaultdict(set)
-
-            for fact in facts:
-                for var in fact.variables:
-                    if var not in remaining_nodes:
-                        continue
-
-                    members = node_to_members[var]
-                    members.update(fact.variables)
-                    members.remove(var)
-
-            node, _ = min(
-                ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),
-                key=itemgetter(1, 0))
+            node = self.veh.find_var(facts, remaining_nodes, node_to_nr_states)
             remaining_nodes.remove(node)
             prod_facts = self.base_fact.copy()
 

@@ -9,6 +9,7 @@ from disc_fact import DiscFactCfg
 from pgmpy.factors.discrete.CPD import TabularCPD
 from pgmpy.models import BayesianNetwork
 from single_net import SingleNet
+from var_elim_heurs import VarElimHeur
 
 
 class CombineMethod(Enum):
@@ -26,7 +27,7 @@ class CombineOp(Enum):
 def combine_bns(
         bns: list[BayesianNetwork], weights: list[float],
         method: CombineMethod, allow_loops: bool, combine_op: CombineOp,
-        dfc: DiscFactCfg) -> SingleNet:
+        dfc: DiscFactCfg, veh: VarElimHeur) -> SingleNet:
     # Assumes nodes identified by strings & same nodes in different networks have same values
     # TODO potentially use class
 
@@ -36,11 +37,11 @@ def combine_bns(
     bn_to_conf = dict(zip(bns, weights))
 
     if method is CombineMethod.MULTI:
-        return _combine_bns_weighted_multi(bn_to_conf, allow_loops, combine_op, dfc)
+        return _combine_bns_weighted_multi(bn_to_conf, allow_loops, combine_op, dfc, veh)
 
     node_to_bns: defaultdict[str, list[BayesianNetwork]] = defaultdict(list)
     node_to_vals: dict[str, list[int | str]] = {}
-    bn_combined = SingleNet(allow_loops, dfc)
+    bn_combined = SingleNet(allow_loops, dfc, veh)
 
     for bayes_net in bn_to_conf:
         node_to_vals.update(bayes_net.states)
@@ -134,10 +135,10 @@ def _combine_int_node(
 
 def _combine_bns_weighted_multi(
         bn_to_conf: dict[BayesianNetwork, float], allow_loops: bool, combine_op: CombineOp,
-        dfc: DiscFactCfg) -> SingleNet:
+        dfc: DiscFactCfg, veh: VarElimHeur) -> SingleNet:
     iter_bn_to_conf = iter(bn_to_conf.items())
     bn_combined, conf_combined = next(iter_bn_to_conf)
-    bn_combined = SingleNet.from_bn(bn_combined, allow_loops, dfc)
+    bn_combined = SingleNet.from_bn(bn_combined, allow_loops, dfc, veh)
     for bayes_net, confidence in iter_bn_to_conf:
         bn_combined = combine_bns(
             [bn_combined, bayes_net],
@@ -145,7 +146,8 @@ def _combine_bns_weighted_multi(
             CombineMethod.SINGLE,
             allow_loops,
             combine_op,
-            dfc
+            dfc,
+            veh
         )
         conf_combined = (conf_combined + confidence) / 2
     return bn_combined

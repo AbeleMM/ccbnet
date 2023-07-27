@@ -13,6 +13,7 @@ from disc_fact import DiscFact, DiscFactCfg
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
+from var_elim_heurs import VarElimHeur
 
 REVEAL_INTERSECTION = True
 FPR = 0.0
@@ -25,8 +26,8 @@ MIN_VAL = 0.1
 class Party(Model):
     def __init__(
             self, identifier: int, local_bn: BayesianNetwork, weight: float, split_ov: bool,
-            dfc: DiscFactCfg) -> None:
-        super().__init__(dfc)
+            dfc: DiscFactCfg, veh: VarElimHeur) -> None:
+        super().__init__(dfc, veh)
         self.identifier = identifier
         self.local_bn = local_bn
         self.weight = weight
@@ -302,10 +303,10 @@ class Party(Model):
 
 def combine(
         bns: list[BayesianNetwork], weights: list[float], split_ov: bool,
-        dfc: DiscFactCfg) -> Party:
+        dfc: DiscFactCfg, veh: VarElimHeur) -> Party:
     if len(bns) != len(weights):
         raise ValueError("Length of bayesian network and weight lists should be equal.")
-    parties = [Party(i, bn, weights[i], split_ov, dfc) for i, bn in enumerate(bns)]
+    parties = [Party(i, bn, weights[i], split_ov, dfc, veh) for i, bn in enumerate(bns)]
 
     for party in parties:
         party.add_peers(parties)

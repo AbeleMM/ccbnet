@@ -4,21 +4,23 @@ import networkx as nx
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
+from var_elim_heurs import VarElimHeur
 
 from fl4bn.disc_fact import DiscFact, DiscFactCfg
 
 
 class SingleNet(Model, BayesianNetwork):
-    def __init__(self, allow_loops: bool, dfc: DiscFactCfg) -> None:
-        Model.__init__(self, dfc)
+    def __init__(self, allow_loops: bool, dfc: DiscFactCfg, veh: VarElimHeur) -> None:
+        Model.__init__(self, dfc, veh)
         BayesianNetwork.__init__(self)
         self.allow_loops = allow_loops
         self.node_to_fact: dict[str, DiscreteFactor] = {}
 
     @classmethod
-    def from_bn(cls, bayes_net: BayesianNetwork, allow_loops: bool, dfc: DiscFactCfg) -> \
-            "SingleNet":
-        single_net = cls(allow_loops, dfc)
+    def from_bn(
+            cls, bayes_net: BayesianNetwork, allow_loops: bool,
+            dfc: DiscFactCfg, veh: VarElimHeur) -> "SingleNet":
+        single_net = cls(allow_loops, dfc, veh)
         single_net.add_nodes_from(bayes_net.nodes())
         single_net.add_edges_from(bayes_net.edges())
         single_net.add_cpds(*cast(list[TabularCPD], bayes_net.get_cpds()))

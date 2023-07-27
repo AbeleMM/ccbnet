@@ -7,6 +7,7 @@ from model import Model
 from pgmpy.factors.discrete import DiscreteFactor
 from pgmpy.models import BayesianNetwork
 from single_net import SingleNet
+from var_elim_heurs import VarElimHeur
 
 
 class MeanType(Enum):
@@ -17,9 +18,9 @@ class MeanType(Enum):
 class AvgOuts(Model):
     def __init__(
             self, bayes_nets: list[BayesianNetwork], mean_type: MeanType,
-            dfc: DiscFactCfg) -> None:
-        super().__init__(dfc)
-        self.nets = [SingleNet.from_bn(bn, False, dfc) for bn in bayes_nets]
+            dfc: DiscFactCfg, veh: VarElimHeur) -> None:
+        super().__init__(dfc, veh)
+        self.nets = [SingleNet.from_bn(bn, False, dfc, veh) for bn in bayes_nets]
         self.mean_type = mean_type
 
     def query(self, targets: list[str], evidence: dict[str, str]) -> DiscreteFactor:

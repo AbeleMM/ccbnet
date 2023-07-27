@@ -25,6 +25,7 @@ from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 from single_net import SingleNet
 from tqdm import tqdm
+from var_elim_heurs import ProdSizeVEH
 
 _memory = Memory(Path(__file__).parents[1] / "cache", verbose=0)
 _BENCHMARK_INDEX: str = "Overlap"
@@ -51,17 +52,18 @@ def _yield_approaches(trained_models: list[BayesianNetwork], weights: list[float
         Generator[tuple[str, Model], None, None]:
     dfc = DiscFactCfg(False, np.float_)
     eq_weights = [1.0] * len(trained_models)
+    veh = ProdSizeVEH()
 
     yield "Combine", combine_bns(
-        trained_models, eq_weights, CombineMethod.MULTI, True, CombineOp.SUPERPOS, dfc)
+        trained_models, eq_weights, CombineMethod.MULTI, True, CombineOp.SUPERPOS, dfc, veh)
     yield "Union", combine_bns(
-        trained_models, weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc)
+        trained_models, weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc, veh)
     # yield "Union - EQ", combine_bns(
-    #     trained_models, eq_weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc)
-    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO, dfc)
-    yield "Decentralized", combine(trained_models, weights, True, dfc)
-    # yield "Decentralized - EQ", combine(trained_models, eq_weights, True, dfc)
-    yield "Decentralized - Compact", combine(trained_models, weights, False, dfc)
+    #     trained_models, eq_weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc, veh)
+    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO, dfc, veh)
+    yield "Decentralized", combine(trained_models, weights, True, dfc, veh)
+    # yield "Decentralized - EQ", combine(trained_models, eq_weights, True, dfc, veh)
+    yield "Decentralized - Compact", combine(trained_models, weights, False, dfc, veh)
 
 
 def benchmark_multi(
@@ -83,7 +85,7 @@ def benchmark_multi(
     nr_samples_per_client = [
         round(base_samples_per_client * weight) for weight in weights]
     nr_evid_vars = round(0.6 * (len(ref_bn) - 1))
-    ref_model = SingleNet.from_bn(ref_bn, False, DiscFactCfg(False, np.float_))
+    ref_model = SingleNet.from_bn(ref_bn, False, DiscFactCfg(False, np.float_), ProdSizeVEH())
     d_f = pd.DataFrame()
 
     with warnings.catch_warnings():
@@ -149,6 +151,7 @@ def benchmark_single(
         row["Brier"] = round(_calc_brier(ref_out.res_facts, pred_out.res_facts), 3)
         row["RelTotTime"] = round(pred_out.tot_time / ref_out.tot_time, 2)
         row["AvgCommVals"] = round(pred_out.avg_comm_vals)
+        # row["AbsTotTime (ms)"] = round(pred_out.tot_time / 10e6)
         # row["StructureF1"] = round(sf1_score(ref_model, model), 3)
         # row["SHD"] = shd_score(ref_model, model)
         # row["EdgeCount"] = len(model.edges())
