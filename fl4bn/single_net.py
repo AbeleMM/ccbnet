@@ -7,6 +7,7 @@ from pgmpy.models import BayesianNetwork
 from var_elim_heurs import VarElimHeur
 
 from fl4bn.disc_fact import DiscFact, DiscFactCfg
+from fl4bn.var_elim_heurs import VarElimHeur
 
 
 class SingleNet(Model, BayesianNetwork):
@@ -14,7 +15,7 @@ class SingleNet(Model, BayesianNetwork):
         Model.__init__(self, dfc, veh)
         BayesianNetwork.__init__(self)
         self.allow_loops = allow_loops
-        self.node_to_fact: dict[str, DiscreteFactor] = {}
+        self.node_to_fact: dict[str, DiscFact] = {}
 
     @classmethod
     def from_bn(
@@ -54,3 +55,8 @@ class SingleNet(Model, BayesianNetwork):
         for cpd in cpds:
             self.node_to_fact[cpd.variable] = DiscFact.from_cpd(cpd, self.dfc)
             self.node_to_nr_states.update((n, len(s)) for n, s in cpd.state_names.items())
+
+    def update_dfc(self, dfc: DiscFactCfg) -> None:
+        super().update_dfc(dfc)
+        for fact in self.node_to_fact.values():
+            fact.set_cfg(dfc)

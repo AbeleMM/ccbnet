@@ -32,10 +32,8 @@ class DiscFact(DiscreteFactor):
         if isinstance(variables, str):
             raise TypeError("Variables: Expected type list or array like, got string")
 
-        if _USE_GPU and dfc.allow_gpu:
-            values = cp.asarray(values, dtype=dfc.float_type)
-        else:
-            values = np.array(values, dtype=dfc.float_type)
+        self.values = values
+        self.set_cfg(dfc)
 
         if len(cardinality) != len(variables):
             raise ValueError(
@@ -43,7 +41,7 @@ class DiscFact(DiscreteFactor):
             )
 
         card_prod = np.product(cardinality)
-        if values.size != card_prod:
+        if self.values.size != card_prod:
             raise ValueError(f"Values array must be of size: {card_prod}")
 
         if len(set(variables)) != len(variables):
@@ -56,7 +54,7 @@ class DiscFact(DiscreteFactor):
 
         self.variables = list(variables)
         self.cardinality = np.array(cardinality, dtype=np.int32)
-        self.values = values.reshape(self.cardinality)
+        self.values.resize(self.cardinality)
 
         # Set the state names
         super(DiscreteFactor, self).store_state_names(
@@ -76,3 +74,9 @@ class DiscFact(DiscreteFactor):
         copy.no_to_name = self.no_to_name.copy()
         copy.name_to_no = self.name_to_no.copy()
         return copy
+
+    def set_cfg(self, dfc: DiscFactCfg) -> None:
+        if _USE_GPU and dfc.allow_gpu:
+            self.values = cp.asarray(self.values, dtype=dfc.float_type)
+        else:
+            self.values = np.array(self.values, dtype=dfc.float_type)

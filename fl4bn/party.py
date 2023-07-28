@@ -15,6 +15,9 @@ from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 from var_elim_heurs import VarElimHeur
 
+from fl4bn.disc_fact import DiscFactCfg
+from fl4bn.var_elim_heurs import VarElimHeur
+
 REVEAL_INTERSECTION = True
 FPR = 0.0
 DS = psi.DataStructure.RAW
@@ -299,6 +302,16 @@ class Party(Model):
         else:
             del self.node_to_cpd[node]
             del self.node_to_fact[node]
+
+    def update_dfc(self, dfc: DiscFactCfg) -> None:
+        for party in cast(Party, self), *self.peers:
+            super(Party, party).update_dfc(dfc)
+            for fact in party.node_to_fact.values():
+                fact.set_cfg(dfc)
+
+    def update_veh(self, veh: VarElimHeur) -> None:
+        for party in cast(Party, self), *self.peers:
+            super(Party, party).update_veh(veh)
 
 
 def combine(

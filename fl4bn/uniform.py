@@ -37,3 +37,4 @@ class Uniform(Model):
 
     def as_dig(self) -> nx.DiGraph:
         return nx.DiGraph()
+

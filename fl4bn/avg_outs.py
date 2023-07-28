@@ -9,6 +9,9 @@ from pgmpy.models import BayesianNetwork
 from single_net import SingleNet
 from var_elim_heurs import VarElimHeur
 
+from fl4bn.disc_fact import DiscFactCfg
+from fl4bn.var_elim_heurs import VarElimHeur
+
 
 class MeanType(Enum):
     ARITH = auto()
@@ -64,3 +67,11 @@ class AvgOuts(Model):
             dig.add_edges_from(bayes_net.edges())
 
         return dig
+
+    def update_dfc(self, dfc: DiscFactCfg) -> None:
+        for net in self.nets:
+            net.update_dfc(dfc)
+
+    def update_veh(self, veh: VarElimHeur) -> None:
+        for net in self.nets:
+            net.update_veh(veh)

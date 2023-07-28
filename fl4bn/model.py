@@ -78,3 +78,10 @@ class Model(ABC):
         prod_facts.normalize(inplace=True)
 
         return prod_facts
+
+    def update_dfc(self, dfc: DiscFactCfg) -> None:
+        self.dfc = dfc
+        self.base_fact.set_cfg(dfc)
+
+    def update_veh(self, veh: VarElimHeur) -> None:
+        self.veh = veh
