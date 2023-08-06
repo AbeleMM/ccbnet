@@ -9,9 +9,6 @@ from pgmpy.models import BayesianNetwork
 from single_net import SingleNet
 from var_elim_heurs import VarElimHeur
 
-from fl4bn.disc_fact import DiscFactCfg
-from fl4bn.var_elim_heurs import VarElimHeur
-
 
 class MeanType(Enum):
     ARITH = auto()

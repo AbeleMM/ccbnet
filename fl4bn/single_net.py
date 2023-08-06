@@ -1,13 +1,11 @@
 from typing import cast
 
 import networkx as nx
+from disc_fact import DiscFact, DiscFactCfg
 from model import Model
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 from var_elim_heurs import VarElimHeur
-
-from fl4bn.disc_fact import DiscFact, DiscFactCfg
-from fl4bn.var_elim_heurs import VarElimHeur
 
 
 class SingleNet(Model, BayesianNetwork):

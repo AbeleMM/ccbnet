@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Iterable, cast
 
 import numpy as np
 from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
@@ -80,3 +81,18 @@ class DiscFact(DiscreteFactor):
             self.values = cp.asarray(self.values, dtype=dfc.float_type)
         else:
             self.values = np.array(self.values, dtype=dfc.float_type)
+
+
+def fact_prod(facts: Iterable[DiscreteFactor], dfc: DiscFactCfg) -> DiscreteFactor:
+    var_to_states: dict[str, list[str]] = {
+        var: states
+        for fact in facts
+        for var, states in cast(dict[str, list[str]], fact.state_names).items()
+    }
+    var_to_int = {var: index for index, var in enumerate(var_to_states)}
+    args: list = [
+        x for fact in facts for x in (fact.values, [var_to_int[var] for var in fact.variables])]
+    args.append(range(len(var_to_states)))
+    vals = np.einsum(*args)
+    card = list(map(len, var_to_states.values()))
+    return DiscFact(var_to_states, card, vals, var_to_states, dfc)

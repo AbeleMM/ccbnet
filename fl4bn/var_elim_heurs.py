@@ -17,7 +17,7 @@ class VarElimHeur(ABC):
         ...
 
 
-class AlphabeticVEH(VarElimHeur):
+class NoVEH(VarElimHeur):
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
@@ -31,7 +31,7 @@ class AlphabeticVEH(VarElimHeur):
         return ""
 
 
-class NrAppearancesVEH(VarElimHeur):
+class MinNeighborsVEH(VarElimHeur):
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
@@ -49,7 +49,7 @@ class NrAppearancesVEH(VarElimHeur):
         return node
 
 
-class ProdSizeVEH(VarElimHeur):
+class MinWeightVEH(VarElimHeur):
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
@@ -60,9 +60,7 @@ class ProdSizeVEH(VarElimHeur):
         for fact in facts:
             for var in fact.variables:
                 if var in remaining_nodes:
-                    members = node_to_members[var]
-                    members.update(fact.variables)
-                    members.remove(var)
+                    node_to_members[var].update(fact.variables)
 
         node, _nr = min(
             ((n, prod(node_to_nr_states[v] for v in ms)) for n, ms in node_to_members.items()),

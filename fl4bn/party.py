@@ -15,9 +15,6 @@ from pgmpy.factors.discrete import DiscreteFactor, TabularCPD
 from pgmpy.models import BayesianNetwork
 from var_elim_heurs import VarElimHeur
 
-from fl4bn.disc_fact import DiscFactCfg
-from fl4bn.var_elim_heurs import VarElimHeur
-
 REVEAL_INTERSECTION = True
 FPR = 0.0
 DS = psi.DataStructure.RAW
