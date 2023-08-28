@@ -8,16 +8,19 @@ from pgmpy.factors.discrete import DiscreteFactor
 
 
 class VarElimHeur(ABC):
+    """Abstract base class for variable elimination ordering heuristic"""
     @staticmethod
     @abstractmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
             remaining_nodes: set[str],
             node_to_nr_states: dict[str, int]) -> str:
+        """Find the next variable to eliminate"""
         ...
 
 
 class NoVEH(VarElimHeur):
+    """Simply eliminate the next variable in the order it is presented"""
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
@@ -32,6 +35,7 @@ class NoVEH(VarElimHeur):
 
 
 class MinNeighborsVEH(VarElimHeur):
+    """Eliminate the variable present in the fewest factors"""
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],
@@ -50,6 +54,7 @@ class MinNeighborsVEH(VarElimHeur):
 
 
 class MinWeightVEH(VarElimHeur):
+    """Eliminate the variable yielding the smallest factor product"""
     @staticmethod
     def find_var(
             facts: Iterable[DiscreteFactor],

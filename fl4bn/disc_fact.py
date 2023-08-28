@@ -13,11 +13,13 @@ except ImportError:
 
 @dataclass(frozen=True)
 class DiscFactCfg:
+    """Data class specifying the config for a factor's values"""
     allow_gpu: bool = field(default=False)
     float_type: type = field(default=np.float_)
 
 
 class DiscFact(DiscreteFactor):
+    """DiscreteFactor subclass that abides by a given factor config"""
     # pylint: disable=super-init-not-called
     def __init__(
             self, variables, cardinality, values, state_names=None,
@@ -64,6 +66,7 @@ class DiscFact(DiscreteFactor):
 
     @classmethod
     def from_cpd(cls, cpd: TabularCPD, dfc: DiscFactCfg | None = None):
+        """Create a DiscFact from a CPD and config"""
         return cls(cpd.variables, cpd.cardinality, cpd.values, cpd.state_names, dfc)
 
     def copy(self):
@@ -77,6 +80,7 @@ class DiscFact(DiscreteFactor):
         return copy
 
     def set_cfg(self, dfc: DiscFactCfg) -> None:
+        """Update the config of the current factor"""
         if _USE_GPU and dfc.allow_gpu:
             self.values = cp.asarray(self.values, dtype=dfc.float_type)
         else:
@@ -84,6 +88,12 @@ class DiscFact(DiscreteFactor):
 
 
 def fact_prod(facts: Iterable[DiscreteFactor], dfc: DiscFactCfg) -> DiscreteFactor:
+    """
+    Alternate method for calculating product of a list of factors in one go.
+    It tends to speed up GPU-accelerated inference, but slow down the CPU-only version.
+    When >52 indices are used in the einsum expression, errors out with "too many subscripts".
+    Could be updated to keep track of the subscript count and perform more einsum calls if needed.
+    """
     var_to_states: dict[str, list[str]] = {
         var: states
         for fact in facts
