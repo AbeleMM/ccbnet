@@ -43,7 +43,7 @@ class DiscFact(DiscreteFactor):
                 "Number of elements in cardinality must be equal to number of variables"
             )
 
-        card_prod = np.product(cardinality)
+        card_prod = np.prod(cardinality)
         if self.values.size != card_prod:
             raise ValueError(f"Values array must be of size: {card_prod}")
 

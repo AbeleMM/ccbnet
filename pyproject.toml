@@ -7,31 +7,31 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-pgmpy = "^0.1.22"
-numpy = "^1.24.2"
-pandas = "^1.5.3"
-joblib = "^1.2.0"
-networkx = "^3.0.0"
-torch = "~1.12.1"
-cupy-cuda11x = "^12.0.0"
-tenseal = "^0.3.14"
-openmined-psi = "^2.0.1"
+pgmpy = "0.1.24"
+numpy = "1.26.3"
+pandas = "1.5.3"
+joblib = "1.3.2"
+networkx = "3.2.1"
+torch = "1.12.1"
+cupy-cuda11x = "12.3.0"
+tenseal = "0.3.14"
+openmined-psi = "2.0.2"
 
 [tool.poetry.group.dev.dependencies]
-jupyterlab = "^3.6.1"
-ipywidgets = "^8.0.4"
-daft = "^0.1.2"
-matplotlib = "^3.7.0"
-scikit-learn = "^1.2.1"
-prospector = { version = "^1.9.0", extras = ["with_bandit"] }
-tabulate = "^0.9.0"
-# ruff = "^0.0.241"
+jupyterlab = "3.6.7"
+ipywidgets = "8.1.1"
+daft = "0.1.2"
+matplotlib = "3.8.2"
+seaborn = "0.12.2"
+scikit-learn = "1.4.0"
+prospector = { version = "1.10.3", extras = ["with_bandit"] }
+tabulate = "0.9.0"
+# ruff = "0.2.0"
 
-[[tool.poetry.source]]
-name = "asml"
-url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
-default = true
-secondary = false
+# [[tool.poetry.source]]
+# name = "asml"
+# url = "https://cdl-hadoop-artifactory.asml.com/artifactory/api/pypi/pypi/simple"
+# priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core"]

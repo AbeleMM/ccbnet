@@ -33,8 +33,7 @@ class Party(Model):
         self.weight = weight
         self.split_ov = split_ov
         self.node_to_cpd: dict[str, TabularCPD] = {
-            cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())
-        }
+            cpd.variable: cpd for cpd in cast(list[TabularCPD], local_bn.get_cpds())}
         self.node_to_fact = {
             node: DiscFact.from_cpd(cpd, self.dfc) for node, cpd in self.node_to_cpd.items()}
         self.node_to_nr_states = {n: len(s) for n, s in local_bn.states.items()}
