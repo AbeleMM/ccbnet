@@ -7,7 +7,6 @@ This repository contains supporting experimental code for the study of [**C**onf
 All source files are in the `fl4bn` directory:
 
 * `run.py` - Entry-point for running experiments
-* `writer.py` - Write experiment results to terminal/file
 * `experiment.py` - Set up experiment(s) splitting a reference network over a number of parties based on additional given parameters
 * `model.py` - Abstract base class for all implemented methods allowing analysis on a Bayesian network
 * `single_net.py` - Model subclass that wraps classic Bayesian networks

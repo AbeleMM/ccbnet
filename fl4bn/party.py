@@ -67,9 +67,14 @@ class Party(Model):
             discard: set[str] = set().union(targets, party.no_marg_nodes, evidence)
             # Set the variables to be eliminated during inference
             nodes = set(n for n in party.node_to_cpd if n not in discard)
-            res_fact = self.var_elim(party_facts, nodes, party.node_to_nr_states)
-            facts.append(res_fact)
-            self.last_nr_comm_vals += res_fact.values.size
+
+            # res_fact = self.var_elim(party_facts, nodes, party.node_to_nr_states)
+            # facts.append(res_fact)
+            # self.last_nr_comm_vals += res_fact.values.size
+
+            res_facts = self.var_elim(party_facts, nodes, party.node_to_nr_states, True)
+            facts.extend(res_facts)
+            self.last_nr_comm_vals += sum(f.values.size for f in res_facts)
 
         nodes: set[str] = set()
         node_to_nr_states: dict[str, int] = {}
@@ -163,6 +168,7 @@ class Party(Model):
             # Get the states for all nodes involved in overlap from participating parties
             node_to_states = self._get_node_to_states([node, *parents_union], overlap_parties)
             # Set up homomorphic encryption
+            # context = None
             context = self._gen_context(nr_parties, len(node_to_states[node]))
             # Party that initiated overlap solving calculates its updated CPD values
             self.set_vals_ret_enc(node, weight_sum, node_to_states, context)

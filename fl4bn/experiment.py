@@ -54,16 +54,16 @@ def _yield_approaches(trained_models: list[BayesianNetwork], weights: list[float
     eq_weights = [1.0] * len(trained_models)
     veh = MinWeightVEH()
 
-    yield "Combine", combine_bns(
+    yield "CC", combine_bns(
         trained_models, eq_weights, CombineMethod.MULTI, True, CombineOp.SUPERPOS, dfc, veh)
-    yield "Union", combine_bns(
+    yield "CU", combine_bns(
         trained_models, weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc, veh)
-    # yield "Union - EQ", combine_bns(
+    # yield "CU - UW", combine_bns(
     #     trained_models, eq_weights, CombineMethod.UNION, True, CombineOp.GEO_MEAN, dfc, veh)
-    yield "AvgOuts", AvgOuts(trained_models, MeanType.GEO, dfc, veh)
-    yield "Decentralized", combine(trained_models, weights, True, dfc, veh)
-    # yield "Decentralized - EQ", combine(trained_models, eq_weights, True, dfc, veh)
-    yield "Decentralized - Compact", combine(trained_models, weights, False, dfc, veh)
+    yield "DOM", AvgOuts(trained_models, MeanType.GEO, dfc, veh)
+    yield "CCBNet", combine(trained_models, weights, True, dfc, veh)
+    # yield "CCBNet - UW", combine(trained_models, eq_weights, True, dfc, veh)
+    yield "CCBNetJ", combine(trained_models, weights, False, dfc, veh)
 
 
 def benchmark_multi(
@@ -80,8 +80,7 @@ def benchmark_multi(
     if eq_weights:
         weights = [1.0] * nr_clients
     else:
-        rand = Random(r_seed)
-        weights = [rand.uniform(0.1, 1.0) for _ in range(nr_clients)]
+        weights = [0.99 if i % 2 else 0.01 for i in range(nr_clients)]
     nr_samples_per_client = [
         round(base_samples_per_client * weight) for weight in weights]
     nr_evid_vars = round(0.6 * (len(ref_bn) - 1))

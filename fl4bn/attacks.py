@@ -12,6 +12,7 @@ from party import Party, combine
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.models import BayesianNetwork
 from pgmpy.utils import get_example_model
+from var_elim_heurs import MinWeightVEH
 
 
 # Works around pgmpy issues with products over CPDs.
@@ -74,10 +75,12 @@ def prep_models(
             _train_model(clients_train_samples[i][train_vars], max_in_deg, ref_bn.states)
             for i, train_vars in enumerate(clients_train_vars)
         ]
-        dfc = DiscFactCfg(False, np.float_)
         eq_weights = [1.0] * len(trained_models)
-        party = combine(trained_models, eq_weights, split_ov, dfc)
-        return party, party.peers[0], ov_vars
+        dfc = DiscFactCfg(False, np.float_)
+        veh = MinWeightVEH()
+        party = combine(trained_models, eq_weights, split_ov, dfc, veh)
+        peer, *_ = party.peers
+        return party, peer, ov_vars
 
 
 def reconstruct_cpd_from_comb(

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import cast
+from typing import Literal, cast, overload
 
 import networkx as nx
 import numpy as np
@@ -53,9 +53,26 @@ class Model(ABC):
         assignment, *_ = cast(list[list[tuple[str, str]]], factor.assignment([argmax]))
         return dict(assignment)
 
+    @overload
     def var_elim(
             self, factors: list[DiscreteFactor],
-            nodes: set[str], node_to_nr_states: dict[str, int]) -> DiscreteFactor:
+            nodes: set[str], node_to_nr_states: dict[str, int],
+            multi: Literal[False] = ...) -> DiscreteFactor:
+        ...
+
+
+    @overload
+    def var_elim(
+            self, factors: list[DiscreteFactor],
+            nodes: set[str], node_to_nr_states: dict[str, int],
+            multi: Literal[True] = ...) -> list[DiscreteFactor]:
+        ...
+
+
+    def var_elim(
+            self, factors: list[DiscreteFactor],
+            nodes: set[str], node_to_nr_states: dict[str, int],
+            multi=False) -> DiscreteFactor | list[DiscreteFactor]:
         """Base variable elimination inference implementation"""
         remaining_nodes = set(nodes)
         facts = deque(factors)
@@ -78,6 +95,9 @@ class Model(ABC):
             facts.append(prod_facts)
 
         prod_facts = self.base_fact.copy()
+
+        if multi:
+            return list(facts)
 
         while facts:
             prod_facts.product(facts.popleft(), inplace=True)
