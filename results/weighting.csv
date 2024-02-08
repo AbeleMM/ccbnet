@@ -1,0 +1,33 @@
+,Overlap,Name,Brier,RelTotTime,AvgCommVals,net,nr_clients
+0,0.1,CCBNet,0.018,0.96,14,asia,2
+1,0.1,CCBNet - UW,0.028,0.95,14,asia,2
+2,0.3,CCBNet,0.009,1.22,20,asia,2
+3,0.3,CCBNet - UW,0.029,1.23,20,asia,2
+4,0.1,CCBNet,0.02,1.3,40,asia,4
+5,0.1,CCBNet - UW,0.036,1.3,40,asia,4
+6,0.3,CCBNet,0.011,1.71,55,asia,4
+7,0.3,CCBNet - UW,0.031,1.7,55,asia,4
+8,0.1,CCBNet,0.067,1.01,76,child,2
+9,0.1,CCBNet - UW,0.067,1.01,76,child,2
+10,0.3,CCBNet,0.047,1.3,258,child,2
+11,0.3,CCBNet - UW,0.088,1.31,258,child,2
+12,0.1,CCBNet,0.067,1.35,436,child,4
+13,0.1,CCBNet - UW,0.084,1.34,436,child,4
+14,0.3,CCBNet,0.048,1.96,1985,child,4
+15,0.3,CCBNet - UW,0.097,2.02,1985,child,4
+16,0.1,CCBNet,0.058,1.28,1194,alarm,2
+17,0.1,CCBNet - UW,0.063,1.27,1194,alarm,2
+18,0.3,CCBNet,0.05,1.48,1503,alarm,2
+19,0.3,CCBNet - UW,0.061,1.44,1503,alarm,2
+20,0.1,CCBNet,0.092,1.27,351,alarm,4
+21,0.1,CCBNet - UW,0.103,1.25,351,alarm,4
+22,0.3,CCBNet,0.057,3.08,9177,alarm,4
+23,0.3,CCBNet - UW,0.061,3.05,9177,alarm,4
+24,0.1,CCBNet,0.104,1.13,290,insurance,2
+25,0.1,CCBNet - UW,0.079,1.12,290,insurance,2
+26,0.3,CCBNet,0.051,1.36,703,insurance,2
+27,0.3,CCBNet - UW,0.051,1.35,703,insurance,2
+28,0.1,CCBNet,0.088,1.87,3554,insurance,4
+29,0.1,CCBNet - UW,0.112,1.86,3554,insurance,4
+30,0.3,CCBNet,0.098,3.08,6967,insurance,4
+31,0.3,CCBNet - UW,0.135,3.05,6967,insurance,4
