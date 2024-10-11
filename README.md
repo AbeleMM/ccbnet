@@ -1,6 +1,6 @@
 # CCBNet
 
-This repository contains supporting experimental code for the study of [**C**onfidentiality-Preserving **C**ollaborative **B**ayesian **Net**works](http://resolver.tudelft.nl/uuid:192a90ed-f6fc-4d5b-b3bc-7cf9b67e6754), including an implementation of the main concepts behind the _CCBNet_ framework proposed within it. The project is written in Python and its setup requires running the `poetry install` command in an environment with [Poetry](https://python-poetry.org/). All interaction between different parties is simulated sequentially.
+This repository contains supporting experimental code for the study of **C**onfidentiality-Preserving **C**ollaborative **B**ayesian **Net**works, including an implementation of the main concepts behind the _CCBNet_ framework proposed within it. The project is written in Python and its setup requires running the `poetry install` command in an environment with [Poetry](https://python-poetry.org/). All interaction between different parties is simulated sequentially.
 
 ## Project Structure
 
