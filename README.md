@@ -1,10 +1,10 @@
 # CCBNet
 
-This repository contains supporting experimental code for the study of [**C**onfidentiality-Preserving **C**ollaborative **B**ayesian **N**etworks](http://resolver.tudelft.nl/uuid:192a90ed-f6fc-4d5b-b3bc-7cf9b67e6754), including an implementation of the main concepts behind the _CCBNet_ framework proposed within it. The project is written in Python and its setup requires running the `poetry install` command in an environment with [Poetry](https://python-poetry.org/). All interaction between different parties is simulated sequentially.
+This repository contains supporting experimental code for the study of [**C**onfidentiality-Preserving **C**ollaborative **B**ayesian **Net**works](http://resolver.tudelft.nl/uuid:192a90ed-f6fc-4d5b-b3bc-7cf9b67e6754), including an implementation of the main concepts behind the _CCBNet_ framework proposed within it. The project is written in Python and its setup requires running the `poetry install` command in an environment with [Poetry](https://python-poetry.org/). All interaction between different parties is simulated sequentially.
 
 ## Project Structure
 
-All source files are in the `fl4bn` directory:
+All source files are in the `ccbnet` directory:
 
 * `run.py` - Entry-point for running experiments
 * `experiment.py` - Set up experiment(s) splitting a reference network over a number of parties based on additional given parameters
@@ -19,7 +19,7 @@ All source files are in the `fl4bn` directory:
 * `var_elim_heurs.py` - Contains different heuristics for greedily determining variable elimination ordering during inference
 * `attacks.py` - Demonstrates performing specific attacks on _CCBNet(J)_
 
-## CCBNet Core Implementation (`fl4bn/party.py`)
+## CCBNet Core Implementation (`ccbnet/party.py`)
 
 ### Overview
 
