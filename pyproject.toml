@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "fl4bn"
+name = "ccbnet"
 version = "0.1.0"
-description = "Federated Learning for Bayesian Networks"
+description = "Confidential Collaborative Bayesian Networks Inference"
 authors = ["Abele Mălan <abele.malan@asml.com>"]
 readme = "README.md"
 
